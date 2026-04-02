@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -8,12 +9,14 @@ type AuthFormProps = {
   mode: "login" | "register";
 };
 
+const MAJORS = ["Cybersecurity", "Marketing", "Business"];
+
 export default function AuthForm({ mode }: AuthFormProps) {
   const supabase = createClient();
   const router = useRouter();
 
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState("student");
+  const [major, setMajor] = useState("Cybersecurity");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,7 +35,8 @@ export default function AuthForm({ mode }: AuthFormProps) {
           options: {
             data: {
               full_name: fullName,
-              role: role,
+              role: "student",
+              major,
             },
           },
         });
@@ -100,15 +104,18 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                Role
+                Major
               </label>
               <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
+                value={major}
+                onChange={(e) => setMajor(e.target.value)}
                 className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
               >
-                <option value="student">Student</option>
-                <option value="admin">Admin</option>
+                {MAJORS.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
               </select>
             </div>
           </>
@@ -157,16 +164,16 @@ export default function AuthForm({ mode }: AuthFormProps) {
         {mode === "login" ? (
           <p>
             Don&apos;t have an account?{" "}
-            <a href="/register" className="font-medium text-blue-600">
+            <Link href="/register" className="font-medium text-blue-600">
               Register
-            </a>
+            </Link>
           </p>
         ) : (
           <p>
             Already have an account?{" "}
-            <a href="/login" className="font-medium text-blue-600">
+            <Link href="/login" className="font-medium text-blue-600">
               Login
-            </a>
+            </Link>
           </p>
         )}
       </div>

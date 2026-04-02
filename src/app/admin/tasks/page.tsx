@@ -6,6 +6,8 @@ type SearchParams = Promise<{
   q?: string;
   taskStatus?: string;
   submissionStatus?: string;
+  success?: string;
+  error?: string;
 }>;
 
 type ProfileRow = {
@@ -470,11 +472,19 @@ export default async function AdminTasksPage({
 }) {
   const params = await searchParams;
   const q = (params.q || "").trim().toLowerCase();
-  const taskStatus = params.taskStatus || "all";
-  const submissionStatus = params.submissionStatus || "pending";
-  const successMessage = decodeMessage(params.success);
-  const errorMessage = decodeMessage(params.error);
+  const taskStatus =
+  typeof params.taskStatus === "string" ? params.taskStatus : "all";
 
+const submissionStatus =
+  typeof params.submissionStatus === "string"
+    ? params.submissionStatus
+    : "pending";
+
+const successMessage =
+  typeof params.success === "string" ? decodeMessage(params.success) : null;
+
+const errorMessage =
+  typeof params.error === "string" ? decodeMessage(params.error) : null;
   const supabase = await createClient();
 
   const {

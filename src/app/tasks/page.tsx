@@ -1,215 +1,207 @@
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Container } from "@/components/ui/container";
+import Link from "next/link";
+import type { SectionWithTaskCount } from "@/types/sections";
 
-type Task = {
-  id: string;
-  title: string;
-  description: string;
-  major: string | null;
-  status: string;
-  created_at: string;
-  assignment_type: string;
-  assigned_user_id: string | null;
-};
+export const metadata = { title: "Tasks | GradFolio" };
 
-function getStatusClasses(status: string) {
-  const value = status.toLowerCase();
+async function getSectionsWithCounts(): Promise<SectionWithTaskCount[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("sections")
+    .select("*, tasks(count)")
+    .order("major", { ascending: true });
 
-  if (value === "open") {
-    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
-  }
+  if (error) throw new Error(error.message);
 
-  if (value === "in progress") {
-    return "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
-  }
-
-  if (value === "closed") {
-    return "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
-  }
-
-  return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+  return data.map((s: any) => ({
+    ...s,
+    task_count: s.tasks?.[0]?.count ?? 0,
+  }));
 }
 
+const PALETTE = [
+  {
+    bg: "bg-indigo-50",
+    text: "text-indigo-700",
+    border: "border-indigo-200",
+    hoverBorder: "hover:border-indigo-400",
+    dot: "bg-indigo-500",
+    tag: "bg-indigo-100 text-indigo-600",
+  },
+  {
+    bg: "bg-violet-50",
+    text: "text-violet-700",
+    border: "border-violet-200",
+    hoverBorder: "hover:border-violet-400",
+    dot: "bg-violet-500",
+    tag: "bg-violet-100 text-violet-600",
+  },
+  {
+    bg: "bg-sky-50",
+    text: "text-sky-700",
+    border: "border-sky-200",
+    hoverBorder: "hover:border-sky-400",
+    dot: "bg-sky-500",
+    tag: "bg-sky-100 text-sky-600",
+  },
+  {
+    bg: "bg-emerald-50",
+    text: "text-emerald-700",
+    border: "border-emerald-200",
+    hoverBorder: "hover:border-emerald-400",
+    dot: "bg-emerald-500",
+    tag: "bg-emerald-100 text-emerald-600",
+  },
+  {
+    bg: "bg-amber-50",
+    text: "text-amber-700",
+    border: "border-amber-200",
+    hoverBorder: "hover:border-amber-400",
+    dot: "bg-amber-500",
+    tag: "bg-amber-100 text-amber-600",
+  },
+  {
+    bg: "bg-rose-50",
+    text: "text-rose-700",
+    border: "border-rose-200",
+    hoverBorder: "hover:border-rose-400",
+    dot: "bg-rose-500",
+    tag: "bg-rose-100 text-rose-600",
+  },
+];
+
 export default async function TasksPage() {
-  const supabase = await createClient();
+  const sections = await getSectionsWithCounts();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Group by major, preserving insertion order
+  const byMajor = sections.reduce<Record<string, SectionWithTaskCount[]>>(
+    (acc, s) => {
+      if (!acc[s.major]) acc[s.major] = [];
+      acc[s.major].push(s);
+      return acc;
+    },
+    {}
+  );
 
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("major, role")
-    .eq("id", user.id)
-    .single();
-
-  if (profileError) {
-    return (
-      <main className="min-h-screen py-12">
-        <Container>
-          <Card className="rounded-3xl border-red-100">
-            <CardHeader>
-              <CardTitle className="text-red-600">Failed to load profile</CardTitle>
-              <CardDescription>{profileError.message}</CardDescription>
-            </CardHeader>
-          </Card>
-        </Container>
-      </main>
-    );
-  }
-
-  let tasksQuery = supabase.from("tasks").select("*");
-
-  if (profile?.role === "admin") {
-    tasksQuery = tasksQuery.order("created_at", { ascending: false });
-  } else {
-    if (!profile?.major) {
-      return (
-        <main className="min-h-screen py-12">
-          <Container>
-            <Card className="rounded-3xl">
-              <CardHeader>
-                <CardTitle>Your major is not set</CardTitle>
-                <CardDescription>
-                  Ask the admin to set your major before viewing tasks.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </Container>
-        </main>
-      );
-    }
-
-    tasksQuery = tasksQuery
-      .or(
-        `and(assignment_type.eq.major,major.eq.${profile.major}),and(assignment_type.eq.specific_user,assigned_user_id.eq.${user.id})`
-      )
-      .order("created_at", { ascending: false });
-  }
-
-  const { data: tasks, error } = await tasksQuery;
-
-  if (error) {
-    return (
-      <main className="min-h-screen py-12">
-        <Container>
-          <Card className="rounded-3xl border-red-100">
-            <CardHeader>
-              <CardTitle className="text-red-600">Failed to load tasks</CardTitle>
-              <CardDescription>{error.message}</CardDescription>
-            </CardHeader>
-          </Card>
-        </Container>
-      </main>
-    );
-  }
-
-  const pageTitle =
-    profile?.role === "admin" ? "All Tasks" : `Tasks for ${profile?.major}`;
-
-  const pageDescription =
-    profile?.role === "admin"
-      ? "As admin, you can view all tasks across all majors and specific-user assignments."
-      : "You only see tasks assigned to your major, plus any tasks assigned directly to you by the admin.";
+  const majors = Object.keys(byMajor).sort();
+  const totalTasks = sections.reduce((a, s) => a + s.task_count, 0);
 
   return (
-    <main className="min-h-screen pb-16 pt-10">
-      <Container>
-        <section className="mb-8 rounded-3xl border border-black/5 bg-white p-8 shadow-sm md:p-10">
-          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div className="max-w-2xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-blue-600">
-                Task marketplace
-              </p>
-              <h1 className="mt-3 text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
-                {pageTitle}
-              </h1>
-              <p className="mt-4 text-base leading-7 text-slate-600 md:text-lg">
-                {pageDescription}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Button href="/dashboard" variant="secondary">
-                Dashboard
-              </Button>
-              <Button href="/" variant="ghost">
-                Home
-              </Button>
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Page header */}
+      <div className="bg-white border-b border-gray-200 px-8 py-8">
+        <div className="max-w-6xl mx-auto">
+          <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
+          <p className="text-gray-500 mt-1">
+            Browse sections and their tasks, organized by major.
+          </p>
+          <div className="flex gap-6 mt-4 text-sm text-gray-500">
+            <span>
+              <strong className="text-gray-900">{sections.length}</strong>{" "}
+              sections
+            </span>
+            <span>
+              <strong className="text-gray-900">{majors.length}</strong> majors
+            </span>
+            <span>
+              <strong className="text-gray-900">{totalTasks}</strong> total
+              tasks
+            </span>
           </div>
-        </section>
+        </div>
+      </div>
 
-        {tasks && tasks.length > 0 ? (
-          <section className="grid gap-6">
-            {tasks.map((task: Task) => (
-              <Card key={task.id} className="rounded-3xl p-0">
-                <CardContent className="p-6 md:p-7">
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap gap-3">
-                        <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 ring-1 ring-blue-100">
-                          {task.major || "No major"}
-                        </span>
+      {/* Content */}
+      <div className="max-w-6xl mx-auto px-8 py-10 space-y-12">
+        {sections.length === 0 ? (
+          <div className="text-center py-24 text-gray-400">
+            <p className="text-5xl mb-4">📚</p>
+            <p className="text-lg font-medium text-gray-600">
+              No sections yet
+            </p>
+            <p className="text-sm mt-1">Ask an admin to create sections.</p>
+          </div>
+        ) : (
+          majors.map((major, majorIndex) => {
+            const majorSections = byMajor[major];
+            const style = PALETTE[majorIndex % PALETTE.length];
 
+            return (
+              <section key={major}>
+                {/* Major heading */}
+                <div className="flex items-center gap-3 mb-5">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${style.dot}`}
+                  />
+                  <h2 className="text-base font-semibold text-gray-800">
+                    {major}
+                  </h2>
+                  <span className="text-xs text-gray-400">
+                    {majorSections.length} section
+                    {majorSections.length !== 1 ? "s" : ""}
+                  </span>
+                  <div className="flex-1 h-px bg-gray-200" />
+                </div>
+
+                {/* Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {majorSections.map((section) => (
+                    <Link
+                      key={section.id}
+                      href={`/tasks/sections/${section.id}`}
+                      className={`group bg-white border-2 ${style.border} ${style.hoverBorder} rounded-2xl p-5 flex flex-col gap-3 hover:shadow-md transition-all duration-200`}
+                    >
+                      {/* Top row */}
+                      <div className="flex items-start justify-between">
                         <span
-                          className={`rounded-full px-3 py-1 text-sm font-medium ${getStatusClasses(
-                            task.status
-                          )}`}
+                          className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${style.tag}`}
                         >
-                          {task.status}
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${style.dot}`}
+                          />
+                          {section.major}
                         </span>
-
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700 ring-1 ring-slate-200">
-                          {task.assignment_type === "specific_user"
-                            ? "Specific user"
-                            : "Major task"}
+                        <span className="text-xs text-gray-400">
+                          {new Date(section.created_at).toLocaleDateString(
+                            "en-US",
+                            { month: "short", year: "numeric" }
+                          )}
                         </span>
                       </div>
 
-                      <h2 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900">
-                        {task.title}
-                      </h2>
+                      {/* Name */}
+                      <h3 className="font-semibold text-gray-900 text-base leading-snug group-hover:text-indigo-700 transition-colors">
+                        {section.name}
+                      </h3>
 
-                      <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-                        {task.description}
-                      </p>
-                    </div>
+                      {/* Description */}
+                      {section.description && (
+                        <p className="text-sm text-gray-500 line-clamp-2 flex-1">
+                          {section.description}
+                        </p>
+                      )}
 
-                    <div className="lg:shrink-0">
-                      <Button href={`/tasks/${task.id}`}>View Details</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </section>
-        ) : (
-          <Card className="rounded-3xl">
-            <CardHeader>
-              <CardTitle>No tasks found</CardTitle>
-              <CardDescription>
-                {profile?.role === "admin"
-                  ? "There are no tasks in the system yet."
-                  : "There are currently no tasks for your major or directly assigned to you."}
-              </CardDescription>
-            </CardHeader>
-          </Card>
+                      {/* Footer */}
+                      <div className="flex items-center justify-between pt-2 mt-auto border-t border-gray-100">
+                        <span className="text-sm text-gray-500">
+                          {section.task_count === 0
+                            ? "No tasks yet"
+                            : `${section.task_count} task${
+                                section.task_count !== 1 ? "s" : ""
+                              }`}
+                        </span>
+                        <span className="text-xs text-indigo-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                          View →
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            );
+          })
         )}
-      </Container>
-    </main>
+      </div>
+    </div>
   );
 }

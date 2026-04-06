@@ -11,6 +11,9 @@ type AuthFormProps = {
 
 const MAJORS = ["Cybersecurity", "Marketing", "Business"];
 
+const inputClass =
+  "w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900";
+
 export default function AuthForm({ mode }: AuthFormProps) {
   const supabase = createClient();
   const router = useRouter();
@@ -75,12 +78,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-      <h1 className="text-2xl font-bold text-gray-900">
+    <div className="w-full max-w-md rounded-2xl border border-black/5 bg-white p-8 shadow-sm">
+      <h1 className="text-2xl font-bold text-slate-900">
         {mode === "login" ? "Login" : "Create account"}
       </h1>
 
-      <p className="mt-2 text-sm text-gray-600">
+      <p className="mt-2 text-sm text-slate-500">
         {mode === "login"
           ? "Login to continue to your dashboard."
           : "Create your GradFolio account."}
@@ -90,7 +93,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         {mode === "register" && (
           <>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
+              <label className="mb-1 block text-sm font-medium text-slate-700">
                 Full Name
               </label>
               <input
@@ -98,18 +101,18 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
-                className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
+                className={inputClass}
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
+              <label className="mb-1 block text-sm font-medium text-slate-700">
                 Major
               </label>
               <select
                 value={major}
                 onChange={(e) => setMajor(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
+                className={inputClass}
               >
                 {MAJORS.map((item) => (
                   <option key={item} value={item}>
@@ -122,7 +125,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         )}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
+          <label className="mb-1 block text-sm font-medium text-slate-700">
             Email
           </label>
           <input
@@ -130,12 +133,12 @@ export default function AuthForm({ mode }: AuthFormProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
+            className={inputClass}
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
+          <label className="mb-1 block text-sm font-medium text-slate-700">
             Password
           </label>
           <input
@@ -143,16 +146,20 @@ export default function AuthForm({ mode }: AuthFormProps) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
+            className={inputClass}
           />
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-xl bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium !text-white transition hover:bg-slate-700 disabled:opacity-60"
         >
-          {loading ? "Please wait..." : mode === "login" ? "Login" : "Create account"}
+          {loading
+            ? "Please wait..."
+            : mode === "login"
+            ? "Login"
+            : "Create account"}
         </button>
       </form>
 
@@ -160,18 +167,24 @@ export default function AuthForm({ mode }: AuthFormProps) {
         <p className="mt-4 text-center text-sm text-red-600">{message}</p>
       )}
 
-      <div className="mt-6 text-center text-sm text-gray-600">
+      <div className="mt-6 text-center text-sm text-slate-500">
         {mode === "login" ? (
           <p>
             Don&apos;t have an account?{" "}
-            <Link href="/register" className="font-medium text-blue-600">
+            <Link
+              href="/register"
+              className="font-medium text-slate-900 underline"
+            >
               Register
             </Link>
           </p>
         ) : (
           <p>
             Already have an account?{" "}
-            <Link href="/login" className="font-medium text-blue-600">
+            <Link
+              href="/login"
+              className="font-medium text-slate-900 underline"
+            >
               Login
             </Link>
           </p>

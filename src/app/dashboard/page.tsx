@@ -1,7 +1,13 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 
 type JoinedTask = {
@@ -21,43 +27,25 @@ const MAJORS = ["Cybersecurity", "Marketing", "Business"];
 
 function getStatusClasses(status: string) {
   const value = status.toLowerCase();
-
-  if (value === "open") {
+  if (value === "open")
     return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
-  }
-
-  if (value === "in progress") {
+  if (value === "in progress")
     return "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
-  }
-
-  if (value === "closed") {
+  if (value === "closed")
     return "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
-  }
-
-  return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+  return "bg-slate-100 text-slate-600";
 }
 
 async function updateMajor(formData: FormData) {
   "use server";
-
   const supabase = await createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
+  if (!user) redirect("/login");
   const major = formData.get("major")?.toString().trim() || "";
-
-  if (!MAJORS.includes(major)) {
-    return;
-  }
-
+  if (!MAJORS.includes(major)) return;
   await supabase.from("profiles").update({ major }).eq("id", user.id);
-
   redirect("/dashboard");
 }
 
@@ -69,9 +57,7 @@ export default async function DashboardPage() {
     error: userError,
   } = await supabase.auth.getUser();
 
-  if (userError || !user) {
-    redirect("/login");
-  }
+  if (userError || !user) redirect("/login");
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -82,18 +68,7 @@ export default async function DashboardPage() {
   const { data: joinedTasks } = await supabase
     .from("task_joins")
     .select(
-      `
-      id,
-      joined_at,
-      tasks (
-        id,
-        title,
-        major,
-        status,
-        assignment_type,
-        assigned_user_id
-      )
-    `
+      `id, joined_at, tasks ( id, title, major, status, assignment_type, assigned_user_id )`
     )
     .eq("user_id", user.id)
     .order("joined_at", { ascending: false });
@@ -110,52 +85,58 @@ export default async function DashboardPage() {
       ? allJoinedTasks
       : allJoinedTasks.filter((item) => {
           if (!item.tasks) return false;
-
           const isMajorTask =
             item.tasks.assignment_type === "major" &&
             item.tasks.major === profile?.major;
-
           const isSpecificUserTask =
             item.tasks.assignment_type === "specific_user" &&
             item.tasks.assigned_user_id === user.id;
-
           return isMajorTask || isSpecificUserTask;
         });
 
+  const isAdmin = profile?.role === "admin";
+  const firstName = profile?.full_name?.split(" ")[0] || "there";
+
   return (
-    <main className="min-h-screen pb-16 pt-10">
-      <Container className="space-y-8">
+    <main className="min-h-screen pb-20 pt-10">
+      <Container className="space-y-6">
+
+        {/* ── Welcome header ── */}
         <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm md:p-10">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-blue-600">
+              <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
                 Dashboard
               </p>
-              <h1 className="mt-3 text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
-                Welcome back, {profile?.full_name || "User"}
+              <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
+                Welcome back, {firstName}
               </h1>
-              <p className="mt-4 text-base leading-7 text-slate-600">
-                Track your joined tasks, manage your activity, and continue
-                building your portfolio through practical work.
+              <p className="mt-3 text-base leading-7 text-slate-500">
+                Track your joined tasks, manage your activity, and keep
+                building your portfolio through real work.
               </p>
 
-              <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-600">
-                <span className="rounded-full bg-slate-100 px-3 py-1">
-                  Role: {profile?.role || "student"}
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1">
-                  Major: {profile?.major || "Not set"}
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1">
+              {/* Profile pills */}
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
                   {user.email}
                 </span>
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700">
+                  {profile?.role || "student"}
+                </span>
+                {profile?.major && (
+                  <span className="rounded-full bg-violet-50 px-3 py-1 text-sm text-violet-700">
+                    {profile.major}
+                  </span>
+                )}
               </div>
             </div>
 
-            <form action="/auth/signout" method="post">
+            {/* Logout */}
+            <form action="/auth/signout" method="post" className="shrink-0">
               <button
                 type="submit"
-                className="inline-flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-slate-200"
+                className="inline-flex items-center justify-center rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
               >
                 Logout
               </button>
@@ -163,32 +144,40 @@ export default async function DashboardPage() {
           </div>
         </section>
 
+        {/* ── Stat cards ── */}
         <section className="grid gap-4 md:grid-cols-3">
           <Card className="rounded-3xl">
             <CardHeader>
               <CardDescription>Joined Tasks</CardDescription>
-              <CardTitle className="text-4xl">{safeJoinedTasks.length}</CardTitle>
+              <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
+                {safeJoinedTasks.length}
+              </CardTitle>
             </CardHeader>
           </Card>
 
           <Card className="rounded-3xl">
             <CardHeader>
               <CardDescription>Submissions</CardDescription>
-              <CardTitle className="text-4xl">{submissionsCount || 0}</CardTitle>
+              <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
+                {submissionsCount || 0}
+              </CardTitle>
             </CardHeader>
           </Card>
 
           <Card className="rounded-3xl">
             <CardHeader>
               <CardDescription>Profile Role</CardDescription>
-              <CardTitle className="text-4xl capitalize">
+              <CardTitle className="mt-1 text-4xl font-bold capitalize text-slate-900">
                 {profile?.role || "student"}
               </CardTitle>
             </CardHeader>
           </Card>
         </section>
 
+        {/* ── Quick actions ── */}
         <section className="grid gap-4 md:grid-cols-2">
+
+          {/* Browse tasks */}
           <Card className="rounded-3xl">
             <CardHeader>
               <CardTitle>Browse Tasks</CardTitle>
@@ -201,7 +190,8 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          {profile?.role === "admin" ? (
+          {/* Admin panel or Change major */}
+          {isAdmin ? (
             <Card className="rounded-3xl">
               <CardHeader>
                 <CardTitle>Admin Panel</CardTitle>
@@ -224,11 +214,11 @@ export default async function DashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form action={updateMajor} className="space-y-4">
+                <form action={updateMajor} className="space-y-3">
                   <select
                     name="major"
                     defaultValue={profile?.major || "Cybersecurity"}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-blue-600"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-900"
                   >
                     {MAJORS.map((major) => (
                       <option key={major} value={major}>
@@ -236,10 +226,9 @@ export default async function DashboardPage() {
                       </option>
                     ))}
                   </select>
-
                   <button
                     type="submit"
-                    className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-medium text-white hover:bg-blue-700"
+                    className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium !text-white transition hover:bg-slate-700"
                   >
                     Save Major
                   </button>
@@ -249,58 +238,77 @@ export default async function DashboardPage() {
           )}
         </section>
 
+        {/* ── Joined tasks list ── */}
         <section>
           <Card className="rounded-3xl">
             <CardHeader>
-              <CardTitle>Your Joined Tasks</CardTitle>
-              <CardDescription>
-                Track the tasks you joined and continue your work.
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Your Joined Tasks</CardTitle>
+                  <CardDescription className="mt-1">
+                    Track the tasks you joined and continue your work.
+                  </CardDescription>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-500">
+                  {safeJoinedTasks.length} task{safeJoinedTasks.length !== 1 ? "s" : ""}
+                </span>
+              </div>
             </CardHeader>
 
             <CardContent>
               {safeJoinedTasks.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {safeJoinedTasks.map((item) =>
                     item.tasks ? (
                       <div
                         key={item.id}
-                        className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-5 lg:flex-row lg:items-center lg:justify-between"
+                        className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-5 lg:flex-row lg:items-center lg:justify-between"
                       >
                         <div className="min-w-0 flex-1">
-                          <h3 className="text-xl font-semibold text-slate-900">
-                            {item.tasks.title}
-                          </h3>
 
-                          <div className="mt-3 flex flex-wrap gap-3">
-                            <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 ring-1 ring-blue-100">
-                              {item.tasks.major}
-                            </span>
+                          {/* Badges */}
+                          <div className="flex flex-wrap gap-2">
                             <span
-                              className={`rounded-full px-3 py-1 text-sm font-medium ${getStatusClasses(
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusClasses(
                                 item.tasks.status
                               )}`}
                             >
                               {item.tasks.status}
                             </span>
+                            {item.tasks.major && (
+                              <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-100">
+                                {item.tasks.major}
+                              </span>
+                            )}
                           </div>
+
+                          {/* Title */}
+                          <h3 className="mt-2 text-base font-semibold text-slate-900">
+                            {item.tasks.title}
+                          </h3>
                         </div>
 
-                        <div className="lg:shrink-0">
-                          <Button href={`/tasks/${item.tasks.id}`}>Open Task</Button>
+                        <div className="shrink-0">
+                          <Button href={`/tasks/${item.tasks.id}`}>
+                            Open Task →
+                          </Button>
                         </div>
                       </div>
                     ) : null
                   )}
                 </div>
               ) : (
-                <div className="rounded-2xl bg-slate-50 p-5 text-slate-600">
-                  You have not joined any tasks yet.
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                  You have not joined any tasks yet.{" "}
+                  <a href="/tasks" className="font-medium text-blue-600 hover:underline">
+                    Browse tasks →
+                  </a>
                 </div>
               )}
             </CardContent>
           </Card>
         </section>
+
       </Container>
     </main>
   );

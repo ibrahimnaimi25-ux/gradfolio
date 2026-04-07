@@ -1,79 +1,93 @@
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { SectionWithTaskCount } from "@/types/sections";
 
 export const metadata = { title: "Tasks | GradFolio" };
 
-async function getSectionsWithCounts(): Promise<SectionWithTaskCount[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("sections")
-    .select("*, tasks(count)")
-    .order("major", { ascending: true });
-
-  if (error) throw new Error(error.message);
-
-  return data.map((s: any) => ({
-    ...s,
-    task_count: s.tasks?.[0]?.count ?? 0,
-  }));
-}
-
 const PALETTE = [
   {
-    bg: "bg-indigo-50",
-    text: "text-indigo-700",
     border: "border-indigo-200",
     hoverBorder: "hover:border-indigo-400",
     dot: "bg-indigo-500",
-    tag: "bg-indigo-100 text-indigo-600",
+    tag: "bg-indigo-50 text-indigo-700",
+    accent: "group-hover:text-indigo-700",
+    arrow: "group-hover:text-indigo-400",
   },
   {
-    bg: "bg-violet-50",
-    text: "text-violet-700",
     border: "border-violet-200",
     hoverBorder: "hover:border-violet-400",
     dot: "bg-violet-500",
-    tag: "bg-violet-100 text-violet-600",
+    tag: "bg-violet-50 text-violet-700",
+    accent: "group-hover:text-violet-700",
+    arrow: "group-hover:text-violet-400",
   },
   {
-    bg: "bg-sky-50",
-    text: "text-sky-700",
     border: "border-sky-200",
     hoverBorder: "hover:border-sky-400",
     dot: "bg-sky-500",
-    tag: "bg-sky-100 text-sky-600",
+    tag: "bg-sky-50 text-sky-700",
+    accent: "group-hover:text-sky-700",
+    arrow: "group-hover:text-sky-400",
   },
   {
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
     border: "border-emerald-200",
     hoverBorder: "hover:border-emerald-400",
     dot: "bg-emerald-500",
-    tag: "bg-emerald-100 text-emerald-600",
+    tag: "bg-emerald-50 text-emerald-700",
+    accent: "group-hover:text-emerald-700",
+    arrow: "group-hover:text-emerald-400",
   },
   {
-    bg: "bg-amber-50",
-    text: "text-amber-700",
     border: "border-amber-200",
     hoverBorder: "hover:border-amber-400",
     dot: "bg-amber-500",
-    tag: "bg-amber-100 text-amber-600",
+    tag: "bg-amber-50 text-amber-700",
+    accent: "group-hover:text-amber-700",
+    arrow: "group-hover:text-amber-400",
   },
   {
-    bg: "bg-rose-50",
-    text: "text-rose-700",
     border: "border-rose-200",
     hoverBorder: "hover:border-rose-400",
     dot: "bg-rose-500",
-    tag: "bg-rose-100 text-rose-600",
+    tag: "bg-rose-50 text-rose-700",
+    accent: "group-hover:text-rose-700",
+    arrow: "group-hover:text-rose-400",
   },
 ];
 
 export default async function TasksPage() {
-  const sections = await getSectionsWithCounts();
+  const supabase = await createClient();
 
-  // Group by major, preserving insertion order
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, major")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdmin = profile?.role === "admin";
+  const userMajor = profile?.major ?? null;
+
+  let query = supabase
+    .from("sections")
+    .select("*, tasks(count)")
+    .order("major", { ascending: true });
+
+  if (!isAdmin && userMajor) {
+    query = query.eq("major", userMajor);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const sections: SectionWithTaskCount[] = (data ?? []).map((s: any) => ({
+    ...s,
+    task_count: s.tasks?.[0]?.count ?? 0,
+  }));
+
   const byMajor = sections.reduce<Record<string, SectionWithTaskCount[]>>(
     (acc, s) => {
       if (!acc[s.major]) acc[s.major] = [];
@@ -87,39 +101,60 @@ export default async function TasksPage() {
   const totalTasks = sections.reduce((a, s) => a + s.task_count, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Page header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-8">
+    <div className="min-h-screen bg-white">
+      <div className="border-b border-slate-100 px-4 sm:px-8 py-8">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
-          <p className="text-gray-500 mt-1">
-            Browse sections and their tasks, organized by major.
+          <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-2">
+            {isAdmin ? "All Sections" : userMajor ? `${userMajor} Sections` : "Tasks"}
           </p>
-          <div className="flex gap-6 mt-4 text-sm text-gray-500">
-            <span>
-              <strong className="text-gray-900">{sections.length}</strong>{" "}
-              sections
-            </span>
-            <span>
-              <strong className="text-gray-900">{majors.length}</strong> majors
-            </span>
-            <span>
-              <strong className="text-gray-900">{totalTasks}</strong> total
-              tasks
-            </span>
-          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Tasks</h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            {isAdmin
+              ? "Browse all sections and tasks across every major."
+              : userMajor
+              ? `Showing sections for the ${userMajor} major.`
+              : "Browse sections and their tasks."}
+          </p>
+          {sections.length > 0 && (
+            <div className="flex flex-wrap gap-5 mt-4 text-sm text-slate-500">
+              <span>
+                <strong className="text-slate-900">{sections.length}</strong>{" "}
+                {sections.length === 1 ? "section" : "sections"}
+              </span>
+              {isAdmin && (
+                <span>
+                  <strong className="text-slate-900">{majors.length}</strong>{" "}
+                  {majors.length === 1 ? "major" : "majors"}
+                </span>
+              )}
+              <span>
+                <strong className="text-slate-900">{totalTasks}</strong> total tasks
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-6xl mx-auto px-8 py-10 space-y-12">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-10 space-y-12">
         {sections.length === 0 ? (
-          <div className="text-center py-24 text-gray-400">
-            <p className="text-5xl mb-4">📚</p>
-            <p className="text-lg font-medium text-gray-600">
-              No sections yet
+          <div className="flex flex-col items-center justify-center py-28 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl mb-5">
+              📚
+            </div>
+            <h3 className="text-lg font-semibold text-slate-800 mb-1">
+              {userMajor && !isAdmin ? `No sections for ${userMajor} yet` : "No sections yet"}
+            </h3>
+            <p className="text-sm text-slate-400 max-w-xs">
+              {userMajor && !isAdmin
+                ? "An admin hasn't created any sections for your major yet. Check back soon."
+                : "Ask an admin to create sections and assign tasks."}
             </p>
-            <p className="text-sm mt-1">Ask an admin to create sections.</p>
+            <Link
+              href="/dashboard"
+              className="mt-6 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+            >
+              ← Back to Dashboard
+            </Link>
           </div>
         ) : (
           majors.map((major, majorIndex) => {
@@ -128,22 +163,15 @@ export default async function TasksPage() {
 
             return (
               <section key={major}>
-                {/* Major heading */}
                 <div className="flex items-center gap-3 mb-5">
-                  <span
-                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${style.dot}`}
-                  />
-                  <h2 className="text-base font-semibold text-gray-800">
-                    {major}
-                  </h2>
-                  <span className="text-xs text-gray-400">
-                    {majorSections.length} section
-                    {majorSections.length !== 1 ? "s" : ""}
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${style.dot}`} />
+                  <h2 className="text-sm font-semibold text-slate-800">{major}</h2>
+                  <span className="text-xs text-slate-400">
+                    {majorSections.length} {majorSections.length === 1 ? "section" : "sections"}
                   </span>
-                  <div className="flex-1 h-px bg-gray-200" />
+                  <div className="flex-1 h-px bg-slate-100" />
                 </div>
 
-                {/* Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {majorSections.map((section) => (
                     <Link
@@ -151,46 +179,38 @@ export default async function TasksPage() {
                       href={`/tasks/sections/${section.id}`}
                       className={`group bg-white border-2 ${style.border} ${style.hoverBorder} rounded-2xl p-5 flex flex-col gap-3 hover:shadow-md transition-all duration-200`}
                     >
-                      {/* Top row */}
                       <div className="flex items-start justify-between">
                         <span
                           className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${style.tag}`}
                         >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${style.dot}`}
-                          />
+                          <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                           {section.major}
                         </span>
-                        <span className="text-xs text-gray-400">
-                          {new Date(section.created_at).toLocaleDateString(
-                            "en-US",
-                            { month: "short", year: "numeric" }
-                          )}
+                        <span className="text-xs text-slate-400">
+                          {new Date(section.created_at).toLocaleDateString("en-US", {
+                            month: "short",
+                            year: "numeric",
+                          })}
                         </span>
                       </div>
 
-                      {/* Name */}
-                      <h3 className="font-semibold text-gray-900 text-base leading-snug group-hover:text-indigo-700 transition-colors">
+                      <h3 className={`font-semibold text-slate-900 text-base leading-snug transition-colors ${style.accent}`}>
                         {section.name}
                       </h3>
 
-                      {/* Description */}
                       {section.description && (
-                        <p className="text-sm text-gray-500 line-clamp-2 flex-1">
+                        <p className="text-sm text-slate-500 line-clamp-2 flex-1">
                           {section.description}
                         </p>
                       )}
 
-                      {/* Footer */}
-                      <div className="flex items-center justify-between pt-2 mt-auto border-t border-gray-100">
-                        <span className="text-sm text-gray-500">
+                      <div className="flex items-center justify-between pt-3 mt-auto border-t border-slate-100">
+                        <span className="text-xs font-medium text-slate-500">
                           {section.task_count === 0
                             ? "No tasks yet"
-                            : `${section.task_count} task${
-                                section.task_count !== 1 ? "s" : ""
-                              }`}
+                            : `${section.task_count} task${section.task_count !== 1 ? "s" : ""}`}
                         </span>
-                        <span className="text-xs text-indigo-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className={`text-xs font-semibold opacity-0 group-hover:opacity-100 transition-all duration-200 ${style.arrow}`}>
                           View →
                         </span>
                       </div>

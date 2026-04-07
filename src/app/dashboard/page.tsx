@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
+import Link from "next/link";
 
 type JoinedTask = {
   id: string;
@@ -21,6 +22,13 @@ type JoinedTask = {
     assignment_type: string;
     assigned_user_id: string | null;
   } | null;
+};
+
+type SectionSummary = {
+  id: string;
+  name: string;
+  major: string;
+  task_count: number;
 };
 
 const MAJORS = ["Cybersecurity", "Marketing", "Business"];
@@ -78,45 +86,60 @@ export default async function DashboardPage() {
     .select("*", { count: "exact", head: true })
     .eq("user_id", user.id);
 
+  const isAdmin = profile?.role === "admin";
+  const userMajor = profile?.major ?? null;
+  const firstName = profile?.full_name?.split(" ")[0] || "there";
+
   const allJoinedTasks = (joinedTasks ?? []) as unknown as JoinedTask[];
 
-  const safeJoinedTasks =
-    profile?.role === "admin"
-      ? allJoinedTasks
-      : allJoinedTasks.filter((item) => {
-          if (!item.tasks) return false;
-          const isMajorTask =
-            item.tasks.assignment_type === "major" &&
-            item.tasks.major === profile?.major;
-          const isSpecificUserTask =
-            item.tasks.assignment_type === "specific_user" &&
-            item.tasks.assigned_user_id === user.id;
-          return isMajorTask || isSpecificUserTask;
-        });
+  const safeJoinedTasks = isAdmin
+    ? allJoinedTasks
+    : allJoinedTasks.filter((item) => {
+        if (!item.tasks) return false;
+        const isMajorTask =
+          item.tasks.assignment_type === "major" &&
+          item.tasks.major === userMajor;
+        const isSpecificUserTask =
+          item.tasks.assignment_type === "specific_user" &&
+          item.tasks.assigned_user_id === user.id;
+        return isMajorTask || isSpecificUserTask;
+      });
 
-  const isAdmin = profile?.role === "admin";
-  const firstName = profile?.full_name?.split(" ")[0] || "there";
+  let sections: SectionSummary[] = [];
+  if (!isAdmin && userMajor) {
+    const { data: sectionData } = await supabase
+      .from("sections")
+      .select("id, name, major, tasks(count)")
+      .eq("major", userMajor)
+      .order("name", { ascending: true });
+
+    sections = (sectionData ?? []).map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      major: s.major,
+      task_count: s.tasks?.[0]?.count ?? 0,
+    }));
+  }
 
   return (
     <main className="min-h-screen pb-20 pt-10">
       <Container className="space-y-6">
 
-        {/* ── Welcome header ── */}
+        {/* Welcome header */}
         <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm md:p-10">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
                 Dashboard
               </p>
-              <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
                 Welcome back, {firstName}
               </h1>
               <p className="mt-3 text-base leading-7 text-slate-500">
-                Track your joined tasks, manage your activity, and keep
-                building your portfolio through real work.
+                Track your joined tasks, manage your activity, and keep building
+                your portfolio through real work.
               </p>
 
-              {/* Profile pills */}
               <div className="mt-5 flex flex-wrap gap-2">
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
                   {user.email}
@@ -124,15 +147,14 @@ export default async function DashboardPage() {
                 <span className="rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700">
                   {profile?.role || "student"}
                 </span>
-                {profile?.major && (
+                {userMajor && (
                   <span className="rounded-full bg-violet-50 px-3 py-1 text-sm text-violet-700">
-                    {profile.major}
+                    {userMajor}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Logout */}
             <form action="/auth/signout" method="post" className="shrink-0">
               <button
                 type="submit"
@@ -144,8 +166,8 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {/* ── Stat cards ── */}
-        <section className="grid gap-4 md:grid-cols-3">
+        {/* Stat cards */}
+        <section className="grid gap-4 sm:grid-cols-3">
           <Card className="rounded-3xl">
             <CardHeader>
               <CardDescription>Joined Tasks</CardDescription>
@@ -174,10 +196,8 @@ export default async function DashboardPage() {
           </Card>
         </section>
 
-        {/* ── Quick actions ── */}
+        {/* Quick actions */}
         <section className="grid gap-4 md:grid-cols-2">
-
-          {/* Browse tasks */}
           <Card className="rounded-3xl">
             <CardHeader>
               <CardTitle>Browse Tasks</CardTitle>
@@ -190,7 +210,6 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Admin panel or Change major */}
           {isAdmin ? (
             <Card className="rounded-3xl">
               <CardHeader>
@@ -217,7 +236,7 @@ export default async function DashboardPage() {
                 <form action={updateMajor} className="space-y-3">
                   <select
                     name="major"
-                    defaultValue={profile?.major || "Cybersecurity"}
+                    defaultValue={userMajor || "Cybersecurity"}
                     className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-900"
                   >
                     {MAJORS.map((major) => (
@@ -238,11 +257,69 @@ export default async function DashboardPage() {
           )}
         </section>
 
-        {/* ── Joined tasks list ── */}
+        {/* My Sections — students only */}
+        {!isAdmin && userMajor && (
+          <section>
+            <Card className="rounded-3xl">
+              <CardHeader>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <CardTitle>My Sections</CardTitle>
+                    <CardDescription className="mt-1">
+                      Sections for your major — {userMajor}.
+                    </CardDescription>
+                  </div>
+                  <Link
+                    href="/tasks"
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                  >
+                    View all →
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {sections.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                    No sections have been created for {userMajor} yet.{" "}
+                    <Link href="/tasks" className="font-medium text-blue-600 hover:underline">
+                      Browse tasks →
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {sections.map((section) => (
+                      <Link
+                        key={section.id}
+                        href={`/tasks/sections/${section.id}`}
+                        className="group flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition-all duration-150 hover:border-indigo-200 hover:bg-white hover:shadow-sm"
+                      >
+                        <h4 className="text-sm font-semibold text-slate-900 group-hover:text-indigo-700 transition-colors leading-snug">
+                          {section.name}
+                        </h4>
+                        <div className="flex items-center justify-between mt-auto pt-1">
+                          <span className="text-xs text-slate-400">
+                            {section.task_count === 0
+                              ? "No tasks yet"
+                              : `${section.task_count} task${section.task_count !== 1 ? "s" : ""}`}
+                          </span>
+                          <span className="text-xs text-indigo-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                            Open →
+                          </span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
+        {/* Joined tasks list */}
         <section>
           <Card className="rounded-3xl">
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <CardTitle>Your Joined Tasks</CardTitle>
                   <CardDescription className="mt-1">
@@ -265,8 +342,6 @@ export default async function DashboardPage() {
                         className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-5 lg:flex-row lg:items-center lg:justify-between"
                       >
                         <div className="min-w-0 flex-1">
-
-                          {/* Badges */}
                           <div className="flex flex-wrap gap-2">
                             <span
                               className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusClasses(
@@ -281,8 +356,6 @@ export default async function DashboardPage() {
                               </span>
                             )}
                           </div>
-
-                          {/* Title */}
                           <h3 className="mt-2 text-base font-semibold text-slate-900">
                             {item.tasks.title}
                           </h3>
@@ -300,9 +373,9 @@ export default async function DashboardPage() {
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
                   You have not joined any tasks yet.{" "}
-                  <a href="/tasks" className="font-medium text-blue-600 hover:underline">
+                  <Link href="/tasks" className="font-medium text-blue-600 hover:underline">
                     Browse tasks →
-                  </a>
+                  </Link>
                 </div>
               )}
             </CardContent>

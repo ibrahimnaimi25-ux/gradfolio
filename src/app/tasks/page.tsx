@@ -71,22 +71,18 @@ export default async function TasksPage() {
   const isAdmin = profile?.role === "admin";
   const userMajor = profile?.major ?? null;
 
-  let query = supabase
+  const { data, error } = await supabase
     .from("sections")
     .select("*, tasks(count)")
     .order("major", { ascending: true });
-
-  if (!isAdmin && userMajor) {
-    query = query.eq("major", userMajor);
-  }
-
-  const { data, error } = await query;
   if (error) throw new Error(error.message);
 
-  const sections: SectionWithTaskCount[] = (data ?? []).map((s: any) => ({
+  const allSections: SectionWithTaskCount[] = (data ?? []).map((s: any) => ({
     ...s,
     task_count: s.tasks?.[0]?.count ?? 0,
   }));
+
+  const sections = allSections;
 
   const byMajor = sections.reduce<Record<string, SectionWithTaskCount[]>>(
     (acc, s) => {
@@ -105,15 +101,11 @@ export default async function TasksPage() {
       <div className="border-b border-slate-100 px-4 sm:px-8 py-8">
         <div className="max-w-6xl mx-auto">
           <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-2">
-            {isAdmin ? "All Sections" : userMajor ? `${userMajor} Sections` : "Tasks"}
+            {isAdmin ? "All Sections" : "Browse Sections"}
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">Tasks</h1>
           <p className="text-slate-500 mt-1 text-sm">
-            {isAdmin
-              ? "Browse all sections and tasks across every major."
-              : userMajor
-              ? `Showing sections for the ${userMajor} major.`
-              : "Browse sections and their tasks."}
+            Browse sections and their tasks, organised by major.
           </p>
           {sections.length > 0 && (
             <div className="flex flex-wrap gap-5 mt-4 text-sm text-slate-500">

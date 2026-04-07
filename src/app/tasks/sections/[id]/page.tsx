@@ -60,7 +60,6 @@ export default async function SectionDetailPage({ params }: Props) {
   const isAdmin = profile?.role === "admin";
   const userMajor = profile?.major ?? null;
 
-  if (!isAdmin && userMajor && section.major !== userMajor) notFound();
 
   const { data: tasks } = await supabase
     .from("tasks")

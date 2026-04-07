@@ -276,7 +276,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
     }
   }
 
-  const inputClass = "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-900";
+  const inputClass = "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100";
 
   return (
     <main className="min-h-screen pb-20 pt-10">
@@ -286,9 +286,12 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
         <div className="mb-8">
           <Link
             href="/tasks"
-            className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-slate-900"
+            className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-indigo-600"
           >
-            ← Back to tasks
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to tasks
           </Link>
 
           <div className="mt-2 rounded-3xl border border-black/5 bg-white p-8 shadow-sm md:p-10">
@@ -319,7 +322,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
 
           {/* Description */}
           <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm lg:col-span-2">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-4">
               Task Description
             </p>
             <div className="whitespace-pre-wrap text-base leading-7 text-slate-700">
@@ -330,7 +333,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
           {/* Sidebar */}
           <aside className="space-y-4">
             <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">
+              <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-4">
                 Task Info
               </p>
               <div className="space-y-4 text-sm">
@@ -351,7 +354,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
 
             {profile.role === "student" && (
               <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-4">
                   Submission Status
                 </p>
                 {!studentSubmission ? (
@@ -397,7 +400,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
 
             {/* Submit form */}
             <section className="mt-6 rounded-3xl border border-black/5 bg-white p-8 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">
+              <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-1">
                 {studentSubmission ? "Update your submission" : "Submit your work"}
               </p>
               <h2 className="text-xl font-bold text-slate-900 mb-4">
@@ -453,7 +456,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-6 py-3 text-sm font-medium !text-white transition hover:bg-slate-700"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
                   >
                     {studentSubmission ? "Update Submission" : "Submit Work"}
                   </button>
@@ -464,7 +467,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
             {/* Previous submission */}
             {studentSubmission && (
               <section className="mt-6 rounded-3xl border border-black/5 bg-white p-8 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-4">
                   Your Submission
                 </p>
 
@@ -495,7 +498,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-3">
                             <a href={studentSubmission.file_url} target="_blank" rel="noreferrer"
-                              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium !text-white transition hover:bg-slate-700">
+                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700">
                               Open / Download
                             </a>
                             <span className="text-xs text-slate-400">

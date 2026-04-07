@@ -29,9 +29,9 @@ function getButtonClasses(variant: ButtonVariant = "primary") {
 
   const variants: Record<ButtonVariant, string> = {
     primary: "bg-slate-900 !text-white hover:bg-slate-700",
-    secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200",
-    outline: "border border-gray-300 bg-white text-gray-900 hover:bg-gray-50",
-    ghost: "text-gray-900 hover:bg-gray-100",
+    secondary: "bg-slate-100 text-slate-800 hover:bg-slate-200",
+    outline: "border border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
+    ghost: "text-slate-800 hover:bg-slate-100",
     danger: "bg-red-600 text-white hover:bg-red-700",
   };
 

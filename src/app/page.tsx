@@ -49,21 +49,21 @@ export default function HomePage() {
     <main className="pb-20">
       <section className="relative overflow-hidden border-b border-slate-200/70 bg-gradient-to-b from-white via-slate-50 to-white">
         <div className="absolute inset-0 -z-10">
-          <div className="absolute left-1/2 top-0 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-blue-100/40 blur-3xl" />
-          <div className="absolute right-0 top-20 h-72 w-72 rounded-full bg-sky-100/40 blur-3xl" />
-          <div className="absolute bottom-0 left-0 h-72 w-72 rounded-full bg-indigo-100/30 blur-3xl" />
+          <div className="absolute left-1/2 top-0 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-indigo-100/40 blur-3xl" />
+          <div className="absolute right-0 top-20 h-72 w-72 rounded-full bg-indigo-100/30 blur-3xl" />
+          <div className="absolute bottom-0 left-0 h-72 w-72 rounded-full bg-violet-100/20 blur-3xl" />
         </div>
 
         <Container className="py-20 md:py-28">
           <div className="grid items-center gap-14 lg:grid-cols-2">
             <div className="max-w-3xl">
-              <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+              <div className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700">
                 Real experience for fresh graduates
               </div>
 
               <h1 className="mt-6 text-5xl font-bold tracking-tight text-slate-900 md:text-6xl lg:text-7xl">
                 Turn student skills into
-                <span className="block text-blue-600">real proof of work</span>
+                <span className="block text-indigo-600">real proof of work</span>
               </h1>
 
               <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
@@ -124,8 +124,8 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-5">
-                    <p className="text-sm font-medium text-blue-700">
+                  <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50 p-5">
+                    <p className="text-sm font-medium text-indigo-700">
                       Long-term vision
                     </p>
                     <p className="mt-2 text-base leading-7 text-slate-700">
@@ -215,8 +215,8 @@ export default function HomePage() {
 
       <section className="pt-16">
         <Container>
-          <div className="rounded-[2rem] border border-blue-100 bg-gradient-to-r from-blue-50 to-sky-50 p-8 text-center md:p-12">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-blue-700">
+          <div className="rounded-[2rem] border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 p-8 text-center md:p-12">
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-indigo-700">
               Start building
             </p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">

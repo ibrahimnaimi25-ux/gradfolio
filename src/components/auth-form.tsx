@@ -12,7 +12,7 @@ type AuthFormProps = {
 const MAJORS = ["Cybersecurity", "Marketing", "Business"];
 
 const inputClass =
-  "w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900";
+  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400";
 
 export default function AuthForm({ mode }: AuthFormProps) {
   const supabase = createClient();
@@ -78,22 +78,21 @@ export default function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <div className="w-full max-w-md rounded-2xl border border-black/5 bg-white p-8 shadow-sm">
-      <h1 className="text-2xl font-bold text-slate-900">
-        {mode === "login" ? "Login" : "Create account"}
+    <div className="w-full max-w-md rounded-2xl border border-slate-100 bg-white p-8 shadow-sm">
+      <h1 className="text-xl font-bold text-slate-900">
+        {mode === "login" ? "Sign in" : "Create account"}
       </h1>
-
-      <p className="mt-2 text-sm text-slate-500">
+      <p className="mt-1.5 text-sm text-slate-500">
         {mode === "login"
-          ? "Login to continue to your dashboard."
-          : "Create your GradFolio account."}
+          ? "Enter your credentials to continue."
+          : "Fill in the details below to get started."}
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         {mode === "register" && (
           <>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Full Name
               </label>
               <input
@@ -101,12 +100,13 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
+                placeholder="Your full name"
                 className={inputClass}
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Major
               </label>
               <select
@@ -125,7 +125,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         )}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
             Email
           </label>
           <input
@@ -133,12 +133,13 @@ export default function AuthForm({ mode }: AuthFormProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            placeholder="you@example.com"
             className={inputClass}
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
             Password
           </label>
           <input
@@ -146,6 +147,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            placeholder="••••••••"
             className={inputClass}
           />
         </div>
@@ -153,18 +155,20 @@ export default function AuthForm({ mode }: AuthFormProps) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium !text-white transition hover:bg-slate-700 disabled:opacity-60"
+          className="mt-2 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading
             ? "Please wait..."
             : mode === "login"
-            ? "Login"
+            ? "Sign in"
             : "Create account"}
         </button>
       </form>
 
       {message && (
-        <p className="mt-4 text-center text-sm text-red-600">{message}</p>
+        <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {message}
+        </div>
       )}
 
       <div className="mt-6 text-center text-sm text-slate-500">
@@ -173,9 +177,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
             Don&apos;t have an account?{" "}
             <Link
               href="/register"
-              className="font-medium text-slate-900 underline"
+              className="font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
             >
-              Register
+              Get started
             </Link>
           </p>
         ) : (
@@ -183,9 +187,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
             Already have an account?{" "}
             <Link
               href="/login"
-              className="font-medium text-slate-900 underline"
+              className="font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
             >
-              Login
+              Sign in
             </Link>
           </p>
         )}

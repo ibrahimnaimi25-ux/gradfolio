@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Container } from "@/components/ui/container";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import { NavLinks } from "@/components/navbar-links";
 
 export default async function Navbar() {
   const supabase = await createClient();
@@ -9,7 +10,6 @@ export default async function Navbar() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Check if user is admin
   let isAdmin = false;
   if (user) {
     const { data: profile } = await supabase
@@ -20,78 +20,55 @@ export default async function Navbar() {
     isAdmin = profile?.role === "admin";
   }
 
+  const studentLinks = [
+    { href: "/", label: "Home" },
+    { href: "/tasks", label: "Tasks" },
+    { href: "/dashboard", label: "Dashboard" },
+  ];
+
+  const adminLinks = [
+    ...studentLinks,
+    { href: "/admin/tasks", label: "Admin Tasks" },
+    { href: "/admin/sections", label: "Admin Sections" },
+  ];
+
+  const guestLinks = [{ href: "/", label: "Home" }];
+
+  const links = !user ? guestLinks : isAdmin ? adminLinks : studentLinks;
+
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
-      <Container className="flex h-20 items-center justify-between">
-        <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-sm font-bold text-white shadow-sm">
+    <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 backdrop-blur-xl shadow-sm">
+      <Container className="flex h-16 items-center justify-between">
+        <div className="flex items-center gap-6">
+          <Link href="/" className="flex items-center gap-3 shrink-0">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white shadow-sm">
               G
             </div>
-            <div className="flex flex-col leading-none">
-              <span className="text-lg font-bold tracking-tight text-slate-900">
+            <div className="hidden sm:flex flex-col leading-none">
+              <span className="text-base font-bold tracking-tight text-slate-900">
                 GradFolio
               </span>
-              <span className="text-xs font-medium text-slate-500">
+              <span className="text-xs font-medium text-slate-400">
                 Real tasks. Real proof.
               </span>
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-2 md:flex">
-            <Link
-              href="/"
-              className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-            >
-              Home
-            </Link>
-
-            {user && (
-              <>
-                <Link
-                  href="/tasks"
-                  className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                >
-                  Tasks
-                </Link>
-                <Link
-                  href="/dashboard"
-                  className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                >
-                  Dashboard
-                </Link>
-
-                {isAdmin && (
-                  <>
-                    <Link
-                      href="/admin/tasks"
-                      className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                    >
-                      Admin Tasks
-                    </Link>
-                    <Link
-                      href="/admin/sections"
-                      className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                    >
-                      Admin Sections
-                    </Link>
-                  </>
-                )}
-              </>
-            )}
+          <nav className="hidden items-center gap-1 md:flex">
+            <NavLinks links={links} />
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {user ? (
             <>
-              <div className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 md:block">
-                Signed in
-              </div>
+              <span className="hidden rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 md:inline-block">
+                {isAdmin ? "Admin" : "Student"}
+              </span>
               <form action="/auth/signout" method="POST">
                 <button
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900"
                 >
                   Logout
                 </button>
@@ -105,7 +82,7 @@ export default async function Navbar() {
               >
                 Login
               </Link>
-              <Button href="/register" className="px-5 py-2.5 text-sm">
+              <Button href="/register" className="px-4 py-2 text-sm">
                 Get Started
               </Button>
             </>

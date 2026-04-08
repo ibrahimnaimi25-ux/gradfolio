@@ -3,11 +3,15 @@
 import { useRef, useState, useTransition } from "react";
 import { createSection, updateSection } from "@/actions/sections";
 import type { Section } from "@/types/sections";
+import { MAJOR_NAMES } from "@/lib/majors";
 
 interface Props {
   mode: "create" | "edit";
   section?: Section;
 }
+
+const inputClass =
+  "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition";
 
 export default function SectionFormDialog({ mode, section }: Props) {
   const [open, setOpen] = useState(false);
@@ -41,7 +45,7 @@ export default function SectionFormDialog({ mode, section }: Props) {
         onClick={() => setOpen(true)}
         className={
           mode === "create"
-            ? "bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
+            ? "bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-indigo-700 transition"
             : "text-sm text-indigo-600 hover:underline"
         }
       >
@@ -52,12 +56,17 @@ export default function SectionFormDialog({ mode, section }: Props) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6 space-y-5">
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {mode === "create" ? "New Section" : "Edit Section"}
-              </h2>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {mode === "create" ? "New Section" : "Edit Section"}
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Sections group tasks within a major.
+                </p>
+              </div>
               <button
                 onClick={() => setOpen(false)}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition"
               >
                 ×
               </button>
@@ -65,46 +74,55 @@ export default function SectionFormDialog({ mode, section }: Props) {
 
             <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Section Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   name="name"
                   required
                   defaultValue={section?.name}
-                  placeholder="e.g. CS 301 — Algorithms"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g. Risk Assessment"
+                  className={inputClass}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Major <span className="text-red-500">*</span>
                 </label>
-                <input
+                <select
                   name="major"
                   required
-                  defaultValue={section?.major}
-                  placeholder="e.g. Computer Science"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+                  defaultValue={section?.major ?? ""}
+                  className={inputClass}
+                >
+                  <option value="">Select a major</option>
+                  {MAJOR_NAMES.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  Only existing majors are allowed. Contact a developer to add new ones.
+                </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Description
                 </label>
                 <textarea
                   name="description"
                   rows={3}
                   defaultValue={section?.description ?? ""}
-                  placeholder="Brief description of this section…"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  placeholder="Brief description of what this section covers…"
+                  className={`${inputClass} resize-none`}
                 />
               </div>
 
               {error && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
                   {error}
                 </p>
               )}
@@ -113,14 +131,14 @@ export default function SectionFormDialog({ mode, section }: Props) {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="text-sm px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+                  className="text-sm px-4 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition"
+                  className="bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition"
                 >
                   {isPending
                     ? "Saving…"

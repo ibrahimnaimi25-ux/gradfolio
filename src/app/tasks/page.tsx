@@ -5,6 +5,8 @@ import type { SectionWithTaskCount } from "@/types/sections";
 
 export const metadata = { title: "Tasks | GradFolio" };
 
+type SearchParams = Promise<{ q?: string }>;
+
 const PALETTE = [
   {
     border: "border-indigo-200",
@@ -56,7 +58,14 @@ const PALETTE = [
   },
 ];
 
-export default async function TasksPage() {
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
+  const params = await searchParams;
+  const q = (params?.q || "").toLowerCase().trim();
+
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -82,7 +91,19 @@ export default async function TasksPage() {
     task_count: s.tasks?.[0]?.count ?? 0,
   }));
 
-  const sections = allSections;
+  // Students see only their own major's sections; admins see all
+  const majorFiltered = isAdmin
+    ? allSections
+    : allSections.filter((s) => s.major === userMajor);
+
+  // Apply search filter (section name or description)
+  const sections = q
+    ? majorFiltered.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          (s.description ?? "").toLowerCase().includes(q)
+      )
+    : majorFiltered;
 
   const byMajor = sections.reduce<Record<string, SectionWithTaskCount[]>>(
     (acc, s) => {
@@ -98,20 +119,35 @@ export default async function TasksPage() {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* Page header */}
       <div className="border-b border-slate-100 px-4 sm:px-8 py-8">
         <div className="max-w-6xl mx-auto">
           <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-2">
             {isAdmin ? "All Sections" : "Browse Sections"}
           </p>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Tasks</h1>
-          <p className="text-slate-500 mt-1 text-sm">
-            Browse sections and their tasks, organised by major.
-          </p>
-          {sections.length > 0 && (
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Tasks</h1>
+              <p className="text-slate-500 mt-1 text-sm">
+                {isAdmin
+                  ? "All sections across every major."
+                  : `Sections for your major — ${userMajor ?? "unknown"}.`}
+              </p>
+            </div>
+            {/* Major badge for students */}
+            {!isAdmin && userMajor && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-sm font-medium text-indigo-700">
+                <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                Your major: {userMajor}
+              </span>
+            )}
+          </div>
+          {majorFiltered.length > 0 && (
             <div className="flex flex-wrap gap-5 mt-4 text-sm text-slate-500">
               <span>
                 <strong className="text-slate-900">{sections.length}</strong>{" "}
                 {sections.length === 1 ? "section" : "sections"}
+                {q ? " matching search" : ""}
               </span>
               {isAdmin && (
                 <span>
@@ -127,6 +163,34 @@ export default async function TasksPage() {
         </div>
       </div>
 
+      {/* Section search filter */}
+      <div className="border-b border-slate-100 bg-slate-50 px-4 sm:px-8 py-4">
+        <div className="max-w-6xl mx-auto">
+          <form method="GET" className="flex gap-3 items-center max-w-sm">
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder="Filter sections by name…"
+              className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+            >
+              Search
+            </button>
+            {q && (
+              <a
+                href="/tasks"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              >
+                Clear
+              </a>
+            )}
+          </form>
+        </div>
+      </div>
+
       <div className="max-w-6xl mx-auto px-4 sm:px-8 py-10 space-y-12">
         {sections.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-28 text-center">
@@ -134,19 +198,35 @@ export default async function TasksPage() {
               📚
             </div>
             <h3 className="text-lg font-semibold text-slate-800 mb-1">
-              {userMajor && !isAdmin ? `No sections for ${userMajor} yet` : "No sections yet"}
+              {q
+                ? `No sections match "${q}"`
+                : userMajor && !isAdmin
+                ? `No sections for ${userMajor} yet`
+                : "No sections yet"}
             </h3>
             <p className="text-sm text-slate-400 max-w-xs">
-              {userMajor && !isAdmin
+              {q
+                ? "Try a different search term."
+                : userMajor && !isAdmin
                 ? "An admin hasn't created any sections for your major yet. Check back soon."
                 : "Ask an admin to create sections and assign tasks."}
             </p>
-            <Link
-              href="/dashboard"
-              className="mt-6 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
-            >
-              ← Back to Dashboard
-            </Link>
+            <div className="mt-6 flex gap-3">
+              {q && (
+                <a
+                  href="/tasks"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  Clear search
+                </a>
+              )}
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+              >
+                ← Back to Dashboard
+              </Link>
+            </div>
           </div>
         ) : (
           majors.map((major, majorIndex) => {

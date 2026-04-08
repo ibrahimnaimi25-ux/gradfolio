@@ -1,6 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { MajorSectionSelect } from "@/components/admin/MajorSectionSelect";
+import { MAJOR_NAMES } from "@/lib/majors";
 
 type SearchParams = Promise<{
   q?: string;
@@ -15,11 +17,6 @@ type ProfileRow = {
   full_name: string | null;
   role: "student" | "admin";
   major: string | null;
-};
-
-type MajorRow = {
-  id: string;
-  name: string;
 };
 
 type SectionRow = {
@@ -159,6 +156,7 @@ async function createTask(formData: FormData) {
   if (!title) redirect("/admin/tasks?error=missing-title");
   if (assignmentType === "major" && !major) redirect("/admin/tasks?error=select-a-major#create-task");
   if (assignmentType === "direct" && !assignedUserId) redirect("/admin/tasks?error=select-a-student#create-task");
+  if (!sectionId) redirect("/admin/tasks?error=select-a-section#create-task");
 
   const payload: {
     title: string;
@@ -331,12 +329,6 @@ export default async function AdminTasksPage({
     .eq("id", user.id)
     .maybeSingle<ProfileRow>();
   if (profileError || !profile || profile.role !== "admin") redirect("/dashboard");
-
-  const { data: majors } = await supabase
-    .from("majors")
-    .select("id, name")
-    .order("name", { ascending: true })
-    .returns<MajorRow[]>();
 
   // Fetch sections for the dropdown
   const { data: sections } = await supabase
@@ -590,16 +582,15 @@ export default async function AdminTasksPage({
                 </select>
               </div>
             </div>
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label htmlFor="major" className={labelClass}>Major</label>
-                <select id="major" name="major" defaultValue="" className={inputClass}>
-                  <option value="">Select a major</option>
-                  {(majors ?? []).map((major) => (
-                    <option key={major.id} value={major.name}>{major.name}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="grid gap-5 md:grid-cols-3">
+              <MajorSectionSelect
+                majorNames={MAJOR_NAMES}
+                sections={sections ?? []}
+                defaultMajor=""
+                defaultSectionId=""
+                inputClass={inputClass}
+                labelClass={labelClass}
+              />
               <div>
                 <label htmlFor="assigned_user_id" className={labelClass}>Assign to Student</label>
                 <select id="assigned_user_id" name="assigned_user_id" defaultValue="" className={inputClass}>
@@ -612,19 +603,6 @@ export default async function AdminTasksPage({
                   ))}
                 </select>
               </div>
-            </div>
-
-            {/* Section dropdown */}
-            <div>
-              <label htmlFor="section_id" className={labelClass}>Section (optional)</label>
-              <select id="section_id" name="section_id" defaultValue="" className={inputClass}>
-                <option value="">No section</option>
-                {(sections ?? []).map((section) => (
-                  <option key={section.id} value={section.id}>
-                    {section.name} — {section.major}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <div className="pt-2">
@@ -715,16 +693,15 @@ export default async function AdminTasksPage({
                           </select>
                         </div>
                       </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div>
-                          <label htmlFor={`major-${task.id}`} className={labelClass}>Major</label>
-                          <select id={`major-${task.id}`} name="major" defaultValue={task.major || ""} className={inputClass}>
-                            <option value="">Select a major</option>
-                            {(majors ?? []).map((major) => (
-                              <option key={major.id} value={major.name}>{major.name}</option>
-                            ))}
-                          </select>
-                        </div>
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <MajorSectionSelect
+                          majorNames={MAJOR_NAMES}
+                          sections={sections ?? []}
+                          defaultMajor={task.major ?? ""}
+                          defaultSectionId={task.section_id ?? ""}
+                          inputClass={inputClass}
+                          labelClass={labelClass}
+                        />
                         <div>
                           <label htmlFor={`assigned_user_id-${task.id}`} className={labelClass}>Assign to Student</label>
                           <select id={`assigned_user_id-${task.id}`} name="assigned_user_id" defaultValue={task.assigned_user_id || ""} className={inputClass}>
@@ -737,19 +714,6 @@ export default async function AdminTasksPage({
                             ))}
                           </select>
                         </div>
-                      </div>
-
-                      {/* Section dropdown in edit form */}
-                      <div>
-                        <label htmlFor={`section_id-${task.id}`} className={labelClass}>Section (optional)</label>
-                        <select id={`section_id-${task.id}`} name="section_id" defaultValue={task.section_id || ""} className={inputClass}>
-                          <option value="">No section</option>
-                          {(sections ?? []).map((section) => (
-                            <option key={section.id} value={section.id}>
-                              {section.name} — {section.major}
-                            </option>
-                          ))}
-                        </select>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3 pt-2">

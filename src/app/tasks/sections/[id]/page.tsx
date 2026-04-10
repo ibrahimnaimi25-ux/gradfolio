@@ -40,12 +40,14 @@ export default async function SectionDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, major")
+    .select("role, major, assigned_major")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -57,9 +59,23 @@ export default async function SectionDetailPage({ params }: Props) {
 
   if (error || !section) notFound();
 
-  const isAdmin = profile?.role === "admin";
+  const role: string = profile?.role ?? "student";
+  const isAdmin = role === "admin";
+  const isManager = role === "manager";
+  const isStaff = isAdmin || isManager;
   const userMajor = profile?.major ?? null;
+  const assignedMajor: string | null = profile?.assigned_major ?? null;
 
+  // ─── Access control ──────────────────────────────────────────────────────────
+  // Admins: full access
+  // Managers: only their assigned major
+  // Students: only their own major
+  if (!isAdmin) {
+    const allowedMajor = isManager ? assignedMajor : userMajor;
+    if (!allowedMajor || section.major !== allowedMajor) {
+      notFound();
+    }
+  }
 
   const { data: tasks } = await supabase
     .from("tasks")
@@ -108,6 +124,14 @@ export default async function SectionDetailPage({ params }: Props) {
                 })}
               </p>
             </div>
+            {isStaff && (
+              <Link
+                href="/admin/sections"
+                className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              >
+                ← Manage Sections
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -122,14 +146,26 @@ export default async function SectionDetailPage({ params }: Props) {
               No tasks in this section yet
             </h3>
             <p className="text-sm text-slate-400 max-w-xs">
-              An admin hasn't added any tasks here yet. Check back soon or explore other sections.
+              {isStaff
+                ? "Create a task and assign it to this section."
+                : "An admin hasn't added any tasks here yet. Check back soon."}
             </p>
-            <Link
-              href="/tasks"
-              className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
-            >
-              ← Back to Tasks
-            </Link>
+            <div className="mt-5 flex gap-3">
+              <Link
+                href="/tasks"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+              >
+                ← Back to Tasks
+              </Link>
+              {isStaff && (
+                <Link
+                  href="/admin/tasks"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  + Create Task
+                </Link>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-2.5">

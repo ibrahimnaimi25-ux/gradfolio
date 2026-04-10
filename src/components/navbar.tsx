@@ -10,15 +10,18 @@ export default async function Navbar() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let isAdmin = false;
+  let role: "student" | "manager" | "admin" | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
-    isAdmin = profile?.role === "admin";
+    role = profile?.role ?? "student";
   }
+
+  const isAdmin = role === "admin";
+  const isManager = role === "manager";
 
   const studentLinks = [
     { href: "/", label: "Home" },
@@ -26,15 +29,41 @@ export default async function Navbar() {
     { href: "/dashboard", label: "Dashboard" },
   ];
 
-  const adminLinks = [
+  // Shared staff links (admin + manager)
+  const staffBaseLinks = [
     ...studentLinks,
-    { href: "/admin/tasks", label: "Admin Tasks" },
-    { href: "/admin/sections", label: "Admin Sections" },
+    { href: "/admin/tasks", label: "Tasks" },
+    { href: "/admin/sections", label: "Sections" },
+    { href: "/admin/submissions", label: "Submissions" },
+  ];
+
+  // Super admin gets manager management on top
+  const adminLinks = [
+    ...staffBaseLinks,
+    { href: "/admin/managers", label: "Managers" },
   ];
 
   const guestLinks = [{ href: "/", label: "Home" }];
 
-  const links = !user ? guestLinks : isAdmin ? adminLinks : studentLinks;
+  const links = !user
+    ? guestLinks
+    : isAdmin
+    ? adminLinks
+    : isManager
+    ? staffBaseLinks
+    : studentLinks;
+
+  const roleBadge = isAdmin
+    ? "Super Admin"
+    : isManager
+    ? "Manager"
+    : "Student";
+
+  const roleBadgeClass = isAdmin
+    ? "bg-violet-100 text-violet-700"
+    : isManager
+    ? "bg-sky-100 text-sky-700"
+    : "bg-slate-100 text-slate-600";
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 backdrop-blur-xl shadow-sm">
@@ -62,8 +91,10 @@ export default async function Navbar() {
         <div className="flex items-center gap-2">
           {user ? (
             <>
-              <span className="hidden rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 md:inline-block">
-                {isAdmin ? "Admin" : "Student"}
+              <span
+                className={`hidden rounded-full px-3 py-1.5 text-xs font-medium md:inline-block ${roleBadgeClass}`}
+              >
+                {roleBadge}
               </span>
               <form action="/auth/signout" method="POST">
                 <button

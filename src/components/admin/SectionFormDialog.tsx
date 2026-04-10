@@ -8,12 +8,17 @@ import { MAJOR_NAMES } from "@/lib/majors";
 interface Props {
   mode: "create" | "edit";
   section?: Section;
+  /**
+   * When set, the major dropdown is replaced by a locked badge.
+   * Passed down from the sections page for managers.
+   */
+  restrictedMajor?: string;
 }
 
 const inputClass =
   "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition";
 
-export default function SectionFormDialog({ mode, section }: Props) {
+export default function SectionFormDialog({ mode, section, restrictedMajor }: Props) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -33,11 +38,14 @@ export default function SectionFormDialog({ mode, section }: Props) {
         }
         setOpen(false);
         formRef.current?.reset();
-      } catch (err: any) {
-        setError(err.message ?? "Something went wrong.");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Something went wrong.");
       }
     });
   }
+
+  // Resolved major: locked for managers, or existing section major for edits
+  const resolvedLockedMajor = restrictedMajor ?? (mode === "edit" && section?.major ? undefined : undefined);
 
   return (
     <>
@@ -90,22 +98,37 @@ export default function SectionFormDialog({ mode, section }: Props) {
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Major <span className="text-red-500">*</span>
                 </label>
-                <select
-                  name="major"
-                  required
-                  defaultValue={section?.major ?? ""}
-                  className={inputClass}
-                >
-                  <option value="">Select a major</option>
-                  {MAJOR_NAMES.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-gray-400">
-                  Only existing majors are allowed. Contact a developer to add new ones.
-                </p>
+
+                {/* Locked major badge for managers */}
+                {restrictedMajor ? (
+                  <>
+                    <input type="hidden" name="major" value={restrictedMajor} />
+                    <div className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-700">
+                      <span className="h-2 w-2 rounded-full bg-indigo-500 shrink-0" />
+                      <span className="font-medium">{restrictedMajor}</span>
+                      <span className="ml-auto text-xs text-indigo-400">Your major</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <select
+                      name="major"
+                      required
+                      defaultValue={section?.major ?? ""}
+                      className={inputClass}
+                    >
+                      <option value="">Select a major</option>
+                      {MAJOR_NAMES.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Only existing majors are allowed. Contact a developer to add new ones.
+                    </p>
+                  </>
+                )}
               </div>
 
               <div>

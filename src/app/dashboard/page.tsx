@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import Link from "next/link";
+import { MAJOR_NAMES } from "@/lib/majors";
 
 type JoinedTask = {
   id: string;
@@ -31,8 +32,6 @@ type SectionSummary = {
   task_count: number;
 };
 
-const MAJORS = ["Cybersecurity", "Marketing", "Business"];
-
 function getStatusClasses(status: string) {
   const value = status.toLowerCase();
   if (value === "open")
@@ -52,7 +51,7 @@ async function updateMajor(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const major = formData.get("major")?.toString().trim() || "";
-  if (!MAJORS.includes(major)) return;
+  if (!MAJOR_NAMES.includes(major)) return;
   await supabase.from("profiles").update({ major }).eq("id", user.id);
   redirect("/dashboard");
 }
@@ -69,10 +68,19 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, role, major")
+    .select("full_name, role, major, assigned_major")
     .eq("id", user.id)
     .maybeSingle();
 
+  const role: string = profile?.role ?? "student";
+  const isAdmin = role === "admin";
+  const isManager = role === "manager";
+  const isStaff = isAdmin || isManager;
+  const userMajor = profile?.major ?? null;
+  const assignedMajor: string | null = profile?.assigned_major ?? null;
+  const firstName = profile?.full_name?.split(" ")[0] || "there";
+
+  // For students: load joined tasks and sections
   const { data: joinedTasks } = await supabase
     .from("task_joins")
     .select(
@@ -86,13 +94,9 @@ export default async function DashboardPage() {
     .select("*", { count: "exact", head: true })
     .eq("user_id", user.id);
 
-  const isAdmin = profile?.role === "admin";
-  const userMajor = profile?.major ?? null;
-  const firstName = profile?.full_name?.split(" ")[0] || "there";
-
   const allJoinedTasks = (joinedTasks ?? []) as unknown as JoinedTask[];
 
-  const safeJoinedTasks = isAdmin
+  const safeJoinedTasks = isStaff
     ? allJoinedTasks
     : allJoinedTasks.filter((item) => {
         if (!item.tasks) return false;
@@ -105,8 +109,9 @@ export default async function DashboardPage() {
         return isMajorTask || isSpecificUserTask;
       });
 
+  // Sections for student view
   let sections: SectionSummary[] = [];
-  if (!isAdmin && userMajor) {
+  if (!isStaff && userMajor) {
     const { data: sectionData } = await supabase
       .from("sections")
       .select("id, name, major, tasks(count)")
@@ -120,6 +125,38 @@ export default async function DashboardPage() {
       task_count: s.tasks?.[0]?.count ?? 0,
     }));
   }
+
+  // Pending submissions count for staff panels
+  let pendingReviews = 0;
+  if (isStaff) {
+    let pendingQuery = supabase
+      .from("submissions")
+      .select("*", { count: "exact", head: true })
+      .is("reviewed_at", null);
+
+    if (isManager && assignedMajor) {
+      // Count only submissions for the manager's major tasks
+      const { data: majorTasks } = await supabase
+        .from("tasks")
+        .select("id")
+        .eq("major", assignedMajor);
+      const ids = (majorTasks ?? []).map((t: any) => t.id);
+      if (ids.length > 0) {
+        pendingQuery = pendingQuery.in("task_id", ids);
+        const { count } = await pendingQuery;
+        pendingReviews = count ?? 0;
+      }
+    } else if (isAdmin) {
+      const { count } = await pendingQuery;
+      pendingReviews = count ?? 0;
+    }
+  }
+
+  const roleBadgeClass = isAdmin
+    ? "bg-violet-50 text-violet-700"
+    : isManager
+    ? "bg-sky-50 text-sky-700"
+    : "bg-blue-50 text-blue-700";
 
   return (
     <main className="min-h-screen pb-20 pt-10">
@@ -136,18 +173,26 @@ export default async function DashboardPage() {
                 Welcome back, {firstName}
               </h1>
               <p className="mt-3 text-base leading-7 text-slate-500">
-                Track your joined tasks, manage your activity, and keep building
-                your portfolio through real work.
+                {isAdmin
+                  ? "Manage tasks, review submissions, and oversee the platform."
+                  : isManager
+                  ? `Manage tasks and review submissions for ${assignedMajor ?? "your major"}.`
+                  : "Track your joined tasks, manage your activity, and keep building your portfolio."}
               </p>
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
                   {user.email}
                 </span>
-                <span className="rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700">
-                  {profile?.role || "student"}
+                <span className={`rounded-full px-3 py-1 text-sm ${roleBadgeClass}`}>
+                  {isAdmin ? "Super Admin" : isManager ? "Manager" : "Student"}
                 </span>
-                {userMajor && (
+                {isManager && assignedMajor && (
+                  <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm text-indigo-700">
+                    📂 {assignedMajor}
+                  </span>
+                )}
+                {!isStaff && userMajor && (
                   <span className="rounded-full bg-violet-50 px-3 py-1 text-sm text-violet-700">
                     {userMajor}
                   </span>
@@ -168,32 +213,63 @@ export default async function DashboardPage() {
 
         {/* Stat cards */}
         <section className="grid gap-4 sm:grid-cols-3">
-          <Card className="rounded-3xl">
-            <CardHeader>
-              <CardDescription>Joined Tasks</CardDescription>
-              <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
-                {safeJoinedTasks.length}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-
-          <Card className="rounded-3xl">
-            <CardHeader>
-              <CardDescription>Submissions</CardDescription>
-              <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
-                {submissionsCount || 0}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-
-          <Card className="rounded-3xl">
-            <CardHeader>
-              <CardDescription>Profile Role</CardDescription>
-              <CardTitle className="mt-1 text-4xl font-bold capitalize text-slate-900">
-                {profile?.role || "student"}
-              </CardTitle>
-            </CardHeader>
-          </Card>
+          {isStaff ? (
+            <>
+              <Card className="rounded-3xl">
+                <CardHeader>
+                  <CardDescription>Pending Reviews</CardDescription>
+                  <CardTitle className={`mt-1 text-4xl font-bold ${pendingReviews > 0 ? "text-amber-600" : "text-slate-900"}`}>
+                    {pendingReviews}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card className="rounded-3xl">
+                <CardHeader>
+                  <CardDescription>
+                    {isAdmin ? "Access Level" : "Your Major"}
+                  </CardDescription>
+                  <CardTitle className="mt-1 text-2xl font-bold capitalize text-slate-900">
+                    {isAdmin ? "Super Admin" : (assignedMajor ?? "Unassigned")}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card className="rounded-3xl">
+                <CardHeader>
+                  <CardDescription>Role</CardDescription>
+                  <CardTitle className="mt-1 text-4xl font-bold capitalize text-slate-900">
+                    {isAdmin ? "Admin" : "Manager"}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            </>
+          ) : (
+            <>
+              <Card className="rounded-3xl">
+                <CardHeader>
+                  <CardDescription>Joined Tasks</CardDescription>
+                  <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
+                    {safeJoinedTasks.length}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card className="rounded-3xl">
+                <CardHeader>
+                  <CardDescription>Submissions</CardDescription>
+                  <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
+                    {submissionsCount || 0}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card className="rounded-3xl">
+                <CardHeader>
+                  <CardDescription>Profile Role</CardDescription>
+                  <CardTitle className="mt-1 text-4xl font-bold capitalize text-slate-900">
+                    {role}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            </>
+          )}
         </section>
 
         {/* Quick actions */}
@@ -210,18 +286,30 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          {isAdmin ? (
+          {isStaff ? (
             <Card className="rounded-3xl">
               <CardHeader>
-                <CardTitle>Admin Panel</CardTitle>
+                <CardTitle>
+                  {isAdmin ? "Admin Panel" : "Manager Panel"}
+                </CardTitle>
                 <CardDescription>
-                  Create and manage tasks for students across the platform.
+                  {isAdmin
+                    ? "Create tasks, manage sections, and oversee the whole platform."
+                    : `Manage tasks and review submissions for ${assignedMajor ?? "your major"}.`}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button href="/admin/tasks" variant="secondary">
-                  Open Admin Panel
+              <CardContent className="flex flex-wrap gap-2">
+                <Button href="/admin/tasks">Manage Tasks</Button>
+                <Button href="/admin/submissions" variant="secondary">
+                  {pendingReviews > 0
+                    ? `Review Submissions (${pendingReviews})`
+                    : "Review Submissions"}
                 </Button>
+                {isAdmin && (
+                  <Button href="/admin/managers" variant="secondary">
+                    Manage Team
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -236,10 +324,10 @@ export default async function DashboardPage() {
                 <form action={updateMajor} className="space-y-3">
                   <select
                     name="major"
-                    defaultValue={userMajor || "Cybersecurity"}
+                    defaultValue={userMajor || MAJOR_NAMES[0]}
                     className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-900"
                   >
-                    {MAJORS.map((major) => (
+                    {MAJOR_NAMES.map((major) => (
                       <option key={major} value={major}>
                         {major}
                       </option>
@@ -258,7 +346,7 @@ export default async function DashboardPage() {
         </section>
 
         {/* My Sections — students only */}
-        {!isAdmin && userMajor && (
+        {!isStaff && userMajor && (
           <section>
             <Card className="rounded-3xl">
               <CardHeader>
@@ -315,72 +403,74 @@ export default async function DashboardPage() {
           </section>
         )}
 
-        {/* Joined tasks list */}
-        <section>
-          <Card className="rounded-3xl">
-            <CardHeader>
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <CardTitle>Your Joined Tasks</CardTitle>
-                  <CardDescription className="mt-1">
-                    Track the tasks you joined and continue your work.
-                  </CardDescription>
+        {/* Joined tasks — students only */}
+        {!isStaff && (
+          <section>
+            <Card className="rounded-3xl">
+              <CardHeader>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <CardTitle>Your Joined Tasks</CardTitle>
+                    <CardDescription className="mt-1">
+                      Track the tasks you joined and continue your work.
+                    </CardDescription>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-500">
+                    {safeJoinedTasks.length} task{safeJoinedTasks.length !== 1 ? "s" : ""}
+                  </span>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-500">
-                  {safeJoinedTasks.length} task{safeJoinedTasks.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-            </CardHeader>
+              </CardHeader>
 
-            <CardContent>
-              {safeJoinedTasks.length > 0 ? (
-                <div className="space-y-3">
-                  {safeJoinedTasks.map((item) =>
-                    item.tasks ? (
-                      <div
-                        key={item.id}
-                        className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-5 lg:flex-row lg:items-center lg:justify-between"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap gap-2">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusClasses(
-                                item.tasks.status
-                              )}`}
-                            >
-                              {item.tasks.status}
-                            </span>
-                            {item.tasks.major && (
-                              <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-100">
-                                {item.tasks.major}
+              <CardContent>
+                {safeJoinedTasks.length > 0 ? (
+                  <div className="space-y-3">
+                    {safeJoinedTasks.map((item) =>
+                      item.tasks ? (
+                        <div
+                          key={item.id}
+                          className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-5 lg:flex-row lg:items-center lg:justify-between"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusClasses(
+                                  item.tasks.status
+                                )}`}
+                              >
+                                {item.tasks.status}
                               </span>
-                            )}
+                              {item.tasks.major && (
+                                <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-100">
+                                  {item.tasks.major}
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="mt-2 text-base font-semibold text-slate-900">
+                              {item.tasks.title}
+                            </h3>
                           </div>
-                          <h3 className="mt-2 text-base font-semibold text-slate-900">
-                            {item.tasks.title}
-                          </h3>
-                        </div>
 
-                        <div className="shrink-0">
-                          <Button href={`/tasks/${item.tasks.id}`}>
-                            Open Task →
-                          </Button>
+                          <div className="shrink-0">
+                            <Button href={`/tasks/${item.tasks.id}`}>
+                              Open Task →
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ) : null
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                  You have not joined any tasks yet.{" "}
-                  <Link href="/tasks" className="font-medium text-blue-600 hover:underline">
-                    Browse tasks →
-                  </Link>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
+                      ) : null
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                    You have not joined any tasks yet.{" "}
+                    <Link href="/tasks" className="font-medium text-blue-600 hover:underline">
+                      Browse tasks →
+                    </Link>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+        )}
 
       </Container>
     </main>

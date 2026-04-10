@@ -8,9 +8,11 @@ import Link from "next/link";
 
 interface Props {
   sections: SectionWithTaskCount[];
+  /** Passed for managers — locks major field in the create/edit dialog. */
+  restrictedMajor?: string;
 }
 
-export default function SectionAdminTable({ sections }: Props) {
+export default function SectionAdminTable({ sections, restrictedMajor }: Props) {
   const [isPending, startTransition] = useTransition();
 
   function handleDelete(id: string, name: string) {
@@ -36,18 +38,10 @@ export default function SectionAdminTable({ sections }: Props) {
     <table className="w-full text-sm">
       <thead className="bg-gray-50 border-b border-gray-200">
         <tr>
-          <th className="text-left px-5 py-3 font-medium text-gray-600">
-            Name
-          </th>
-          <th className="text-left px-5 py-3 font-medium text-gray-600">
-            Major
-          </th>
-          <th className="text-left px-5 py-3 font-medium text-gray-600">
-            Tasks
-          </th>
-          <th className="text-left px-5 py-3 font-medium text-gray-600">
-            Created
-          </th>
+          <th className="text-left px-5 py-3 font-medium text-gray-600">Name</th>
+          <th className="text-left px-5 py-3 font-medium text-gray-600">Major</th>
+          <th className="text-left px-5 py-3 font-medium text-gray-600">Tasks</th>
+          <th className="text-left px-5 py-3 font-medium text-gray-600">Created</th>
           <th className="px-5 py-3" />
         </tr>
       </thead>
@@ -76,7 +70,11 @@ export default function SectionAdminTable({ sections }: Props) {
               })}
             </td>
             <td className="px-5 py-3 text-right space-x-3 whitespace-nowrap">
-              <SectionFormDialog mode="edit" section={section} />
+              <SectionFormDialog
+                mode="edit"
+                section={section}
+                restrictedMajor={restrictedMajor}
+              />
               <button
                 onClick={() => handleDelete(section.id, section.name)}
                 disabled={isPending}

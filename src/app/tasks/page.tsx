@@ -78,23 +78,23 @@ export default async function TasksPage({
     .maybeSingle();
 
   const isAdmin = profile?.role === "admin";
-  const userMajor = profile?.major ?? null;
+  const userMajor: string | null = profile?.major ?? null;
 
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("sections")
     .select("*, tasks(count)")
     .order("major", { ascending: true });
-  if (error) throw new Error(error.message);
 
   const allSections: SectionWithTaskCount[] = (data ?? []).map((s: any) => ({
     ...s,
     task_count: s.tasks?.[0]?.count ?? 0,
   }));
 
-  // Students see only their own major's sections; admins see all
-  const majorFiltered = isAdmin
-    ? allSections
-    : allSections.filter((s) => s.major === userMajor);
+  // Admins see all sections; students see only their major
+  const majorFiltered =
+    isAdmin
+      ? allSections
+      : allSections.filter((s) => s.major === userMajor);
 
   // Apply search filter (section name or description)
   const sections = q
@@ -131,7 +131,9 @@ export default async function TasksPage({
               <p className="text-slate-500 mt-1 text-sm">
                 {isAdmin
                   ? "All sections across every major."
-                  : `Sections for your major — ${userMajor ?? "unknown"}.`}
+                  : userMajor
+                  ? `Sections for your major — ${userMajor}.`
+                  : "Your task sections."}
               </p>
             </div>
             {/* Major badge for students */}

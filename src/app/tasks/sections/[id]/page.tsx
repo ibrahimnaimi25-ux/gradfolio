@@ -106,16 +106,21 @@ export default async function SectionDetailPage({ params }: Props) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  let role: string = "student";
+  let userMajor: string | null = null;
+  let assignedMajor: string | null = null;
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("role, major, assigned_major")
     .eq("id", user.id)
     .maybeSingle();
+  role = profile?.role ?? "student";
+  userMajor = profile?.major ?? null;
+  assignedMajor = profile?.assigned_major ?? null;
 
   const { data: section, error } = await supabase
     .from("sections")
@@ -125,14 +130,12 @@ export default async function SectionDetailPage({ params }: Props) {
 
   if (error || !section) notFound();
 
-  const role: string = profile?.role ?? "student";
   const isAdmin = role === "admin";
   const isManager = role === "manager";
   const isStaff = isAdmin || isManager;
-  const userMajor = profile?.major ?? null;
-  const assignedMajor: string | null = profile?.assigned_major ?? null;
 
   // ─── Access control ──────────────────────────────────────────────────────────
+  // Non-admin users are scoped to their own major (or assigned major for managers).
   if (!isAdmin) {
     const allowedMajor = isManager ? assignedMajor : userMajor;
     if (!allowedMajor || section.major !== allowedMajor) {
@@ -150,11 +153,10 @@ export default async function SectionDetailPage({ params }: Props) {
   const taskList = tasks ?? [];
 
   // ─── Student progress map ────────────────────────────────────────────────────
-  // One extra query — only for students, only for tasks in this section.
-  // Result: { taskId → "reviewed" | "submitted" }
+  // Only for logged-in students — guests have no progress to show.
   const progressMap: Record<string, ProgressState> = {};
 
-  if (!isStaff && taskList.length > 0) {
+  if (!isStaff && user && taskList.length > 0) {
     const taskIds = taskList.map((t) => t.id);
     const { data: submissions } = await supabase
       .from("submissions")
@@ -212,7 +214,7 @@ export default async function SectionDetailPage({ params }: Props) {
               </p>
             </div>
 
-            {/* Progress bar — students only, only when tasks exist */}
+            {/* Progress bar — logged-in students only */}
             {!isStaff && taskList.length > 0 && (
               <div className="flex-1 min-w-[160px]">
                 <div className="flex items-center justify-between mb-1.5">
@@ -261,7 +263,8 @@ export default async function SectionDetailPage({ params }: Props) {
             <p className="text-sm text-slate-400 max-w-xs">
               {isStaff
                 ? "Create a task and assign it to this section."
-                : "An admin hasn't added any tasks here yet. Check back soon."}
+                : "An admin hasn't added any tasks here yet. Check back soon."
+              }
             </p>
             <div className="mt-5 flex gap-3">
               <Link

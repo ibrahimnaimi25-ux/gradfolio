@@ -254,6 +254,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
   const successMessage = decodeMessage(resolvedSearchParams.success);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+
   if (!user) redirect("/login");
 
   const { data: profile, error: profileError } = await supabase
@@ -268,15 +269,19 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
   if (taskError || !task) notFound();
 
   const isAdmin = profile.role === "admin";
-  const isDirectlyAssigned = task.assigned_user_id === user.id;
-  const isMajorTask = !task.assigned_user_id && !!task.major && !!profile.major && task.major === profile.major;
-  const canAccessTask = isAdmin || isDirectlyAssigned || isMajorTask;
-  if (!canAccessTask) notFound();
+  const isStudent = profile.role === "student";
+
+  // Non-admin users are scoped to their major or direct assignment.
+  if (!isAdmin) {
+    const isDirectlyAssigned = task.assigned_user_id === user.id;
+    const isMajorTask = !task.assigned_user_id && !!task.major && !!profile.major && task.major === profile.major;
+    if (!isDirectlyAssigned && !isMajorTask) notFound();
+  }
 
   let studentSubmission: SubmissionRow | null = null;
   let reviewerProfile: ReviewerRow | null = null;
 
-  if (profile.role === "student") {
+  if (isStudent && user) {
     const { data: submission } = await supabase
       .from("submissions")
       .select("id, user_id, task_id, content, link_url, file_name, file_path, file_url, file_type, file_size, submitted_at, admin_feedback, reviewed_at, reviewed_by")
@@ -391,7 +396,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
               </div>
             </div>
 
-            {profile.role === "student" && (
+            {isStudent && (
               <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-4">
                   Submission Status
@@ -419,7 +424,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
         </div>
 
         {/* Student submission form + history */}
-        {profile.role === "student" && (
+        {isStudent && (
           <>
             {/* Alerts */}
             {(successMessage || errorMessage) && (

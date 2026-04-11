@@ -43,7 +43,9 @@ export default async function Navbar() {
     { href: "/admin/managers", label: "Managers" },
   ];
 
-  const guestLinks = [{ href: "/", label: "Home" }];
+  const guestLinks = [
+    { href: "/", label: "Home" },
+  ];
 
   const links = !user
     ? guestLinks

@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 
@@ -107,21 +107,20 @@ export default async function SectionDetailPage({ params }: Props) {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
-  let role: string = "guest";
+  let role: string = "student";
   let userMajor: string | null = null;
   let assignedMajor: string | null = null;
 
-  if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, major, assigned_major")
-      .eq("id", user.id)
-      .maybeSingle();
-    role = profile?.role ?? "student";
-    userMajor = profile?.major ?? null;
-    assignedMajor = profile?.assigned_major ?? null;
-  }
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, major, assigned_major")
+    .eq("id", user.id)
+    .maybeSingle();
+  role = profile?.role ?? "student";
+  userMajor = profile?.major ?? null;
+  assignedMajor = profile?.assigned_major ?? null;
 
   const { data: section, error } = await supabase
     .from("sections")
@@ -134,11 +133,10 @@ export default async function SectionDetailPage({ params }: Props) {
   const isAdmin = role === "admin";
   const isManager = role === "manager";
   const isStaff = isAdmin || isManager;
-  const isGuest = !user;
 
   // ─── Access control ──────────────────────────────────────────────────────────
-  // Guests can browse any section. Logged-in non-admin users are scoped to their major.
-  if (!isGuest && !isAdmin) {
+  // Non-admin users are scoped to their own major (or assigned major for managers).
+  if (!isAdmin) {
     const allowedMajor = isManager ? assignedMajor : userMajor;
     if (!allowedMajor || section.major !== allowedMajor) {
       notFound();
@@ -152,17 +150,13 @@ export default async function SectionDetailPage({ params }: Props) {
     .eq("section_id", id)
     .order("created_at", { ascending: true });
 
-  // Guests only see publicly browsable tasks — direct-assignment (company-specific) tasks
-  // are hidden from unauthenticated users and require login to access.
-  const taskList = isGuest
-    ? (tasks ?? []).filter((t: any) => t.assignment_type !== "direct")
-    : (tasks ?? []);
+  const taskList = tasks ?? [];
 
   // ─── Student progress map ────────────────────────────────────────────────────
   // Only for logged-in students — guests have no progress to show.
   const progressMap: Record<string, ProgressState> = {};
 
-  if (!isGuest && !isStaff && user && taskList.length > 0) {
+  if (!isStaff && user && taskList.length > 0) {
     const taskIds = taskList.map((t) => t.id);
     const { data: submissions } = await supabase
       .from("submissions")
@@ -221,7 +215,7 @@ export default async function SectionDetailPage({ params }: Props) {
             </div>
 
             {/* Progress bar — logged-in students only */}
-            {!isGuest && !isStaff && taskList.length > 0 && (
+            {!isStaff && taskList.length > 0 && (
               <div className="flex-1 min-w-[160px]">
                 <div className="flex items-center justify-between mb-1.5">
                   <p className="text-xs text-slate-400 uppercase tracking-wider">Your progress</p>

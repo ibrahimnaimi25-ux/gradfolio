@@ -45,7 +45,6 @@ export default async function Navbar() {
 
   const guestLinks = [
     { href: "/", label: "Home" },
-    { href: "/tasks", label: "Tasks" },
   ];
 
   const links = !user

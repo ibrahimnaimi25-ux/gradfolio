@@ -19,7 +19,42 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: `${data.name} | GradFolio` };
 }
 
-function StatusBadge({ status }: { status: string | null }) {
+// ─── Due date badge ───────────────────────────────────────────────────────────
+function DueDateBadge({ dueDate }: { dueDate: string | null }) {
+  if (!dueDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate + "T00:00:00");
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const formatted = due.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  let label: string;
+  let cls: string;
+  if (diffDays < 0) {
+    label = `Overdue · ${formatted}`;
+    cls = "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
+  } else if (diffDays === 0) {
+    label = "Due today!";
+    cls = "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
+  } else if (diffDays === 1) {
+    label = "Due tomorrow";
+    cls = "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+  } else if (diffDays <= 7) {
+    label = `Due in ${diffDays}d`;
+    cls = "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
+  } else {
+    label = `🗓 ${formatted}`;
+    cls = "bg-slate-100 text-slate-500";
+  }
+  return (
+    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+// ─── Task status badge (open / draft / closed) ────────────────────────────────
+function TaskStatusBadge({ status }: { status: string | null }) {
   if (!status) return null;
   const map: Record<string, string> = {
     open: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
@@ -32,6 +67,37 @@ function StatusBadge({ status }: { status: string | null }) {
   return (
     <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full capitalize shrink-0 ${cls}`}>
       {status}
+    </span>
+  );
+}
+
+// ─── Student progress badge (submitted / reviewed) ───────────────────────────
+type ProgressState = "reviewed" | "submitted" | null;
+
+function ProgressBadge({ state }: { state: ProgressState }) {
+  if (!state) return null;
+
+  if (state === "reviewed") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200 shrink-0">
+        <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+          <path
+            fillRule="evenodd"
+            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+            clipRule="evenodd"
+          />
+        </svg>
+        Reviewed
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 shrink-0">
+      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+      </svg>
+      Submitted
     </span>
   );
 }
@@ -67,9 +133,6 @@ export default async function SectionDetailPage({ params }: Props) {
   const assignedMajor: string | null = profile?.assigned_major ?? null;
 
   // ─── Access control ──────────────────────────────────────────────────────────
-  // Admins: full access
-  // Managers: only their assigned major
-  // Students: only their own major
   if (!isAdmin) {
     const allowedMajor = isManager ? assignedMajor : userMajor;
     if (!allowedMajor || section.major !== allowedMajor) {
@@ -77,13 +140,37 @@ export default async function SectionDetailPage({ params }: Props) {
     }
   }
 
+  // ─── Tasks ───────────────────────────────────────────────────────────────────
   const { data: tasks } = await supabase
     .from("tasks")
-    .select("id, title, description, status, major, assignment_type, submission_type")
+    .select("id, title, description, status, major, assignment_type, submission_type, due_date")
     .eq("section_id", id)
     .order("created_at", { ascending: true });
 
   const taskList = tasks ?? [];
+
+  // ─── Student progress map ────────────────────────────────────────────────────
+  // One extra query — only for students, only for tasks in this section.
+  // Result: { taskId → "reviewed" | "submitted" }
+  const progressMap: Record<string, ProgressState> = {};
+
+  if (!isStaff && taskList.length > 0) {
+    const taskIds = taskList.map((t) => t.id);
+    const { data: submissions } = await supabase
+      .from("submissions")
+      .select("task_id, reviewed_at")
+      .eq("user_id", user.id)
+      .in("task_id", taskIds);
+
+    for (const sub of submissions ?? []) {
+      progressMap[sub.task_id] = sub.reviewed_at ? "reviewed" : "submitted";
+    }
+  }
+
+  // ─── Section progress counts (students only) ─────────────────────────────────
+  const completedCount = Object.values(progressMap).filter((v) => v === "reviewed").length;
+  const submittedCount = Object.values(progressMap).filter((v) => v === "submitted").length;
+  const doneCount = completedCount + submittedCount;
 
   return (
     <div className="min-h-screen bg-white">
@@ -124,6 +211,32 @@ export default async function SectionDetailPage({ params }: Props) {
                 })}
               </p>
             </div>
+
+            {/* Progress bar — students only, only when tasks exist */}
+            {!isStaff && taskList.length > 0 && (
+              <div className="flex-1 min-w-[160px]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs text-slate-400 uppercase tracking-wider">Your progress</p>
+                  <p className="text-xs font-semibold text-slate-600">
+                    {doneCount} / {taskList.length}
+                  </p>
+                </div>
+                <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-2 rounded-full bg-indigo-500 transition-all duration-500"
+                    style={{ width: `${taskList.length > 0 ? (doneCount / taskList.length) * 100 : 0}%` }}
+                  />
+                </div>
+                {doneCount > 0 && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    {completedCount > 0 && `${completedCount} reviewed`}
+                    {completedCount > 0 && submittedCount > 0 && " · "}
+                    {submittedCount > 0 && `${submittedCount} pending review`}
+                  </p>
+                )}
+              </div>
+            )}
+
             {isStaff && (
               <Link
                 href="/admin/sections"
@@ -169,33 +282,56 @@ export default async function SectionDetailPage({ params }: Props) {
           </div>
         ) : (
           <div className="space-y-2.5">
-            {taskList.map((task: any, i: number) => (
-              <Link
-                key={task.id}
-                href={`/tasks/${task.id}`}
-                className="group bg-white border border-slate-100 rounded-2xl px-5 py-4 flex items-start gap-4 hover:border-indigo-200 hover:shadow-sm transition-all duration-150 block"
-              >
-                <span className="text-xs font-mono text-slate-300 mt-1 w-6 shrink-0 group-hover:text-indigo-300 transition-colors">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <h3 className="font-medium text-slate-900 leading-snug group-hover:text-indigo-700 transition-colors">
-                      {task.title}
-                    </h3>
-                    <StatusBadge status={task.status} />
+            {taskList.map((task: any, i: number) => {
+              const progress = progressMap[task.id] ?? null;
+              const isDone = progress === "reviewed";
+              return (
+                <Link
+                  key={task.id}
+                  href={`/tasks/${task.id}`}
+                  className={`group flex items-start gap-4 rounded-2xl border px-5 py-4 transition-all duration-150 block
+                    ${isDone
+                      ? "border-emerald-100 bg-emerald-50/30 hover:border-emerald-300 hover:shadow-sm"
+                      : "border-slate-100 bg-white hover:border-indigo-200 hover:shadow-sm"
+                    }`}
+                >
+                  {/* Row number */}
+                  <span className={`text-xs font-mono mt-1 w-6 shrink-0 transition-colors
+                    ${isDone ? "text-emerald-300 group-hover:text-emerald-400" : "text-slate-300 group-hover:text-indigo-300"}`}>
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <h3 className={`font-medium leading-snug transition-colors
+                        ${isDone ? "text-slate-600 group-hover:text-emerald-700" : "text-slate-900 group-hover:text-indigo-700"}`}>
+                        {task.title}
+                      </h3>
+
+                      {/* Right-hand badges — due date + task status + student progress */}
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        <DueDateBadge dueDate={task.due_date ?? null} />
+                        <TaskStatusBadge status={task.status} />
+                        <ProgressBadge state={progress} />
+                      </div>
+                    </div>
+
+                    {task.description && (
+                      <p className="text-sm text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                        {task.description}
+                      </p>
+                    )}
                   </div>
-                  {task.description && (
-                    <p className="text-sm text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                      {task.description}
-                    </p>
-                  )}
-                </div>
-                <span className="text-slate-200 group-hover:text-indigo-400 transition-colors text-sm mt-1 shrink-0">
-                  →
-                </span>
-              </Link>
-            ))}
+
+                  {/* Arrow */}
+                  <span className={`text-sm mt-1 shrink-0 transition-colors
+                    ${isDone ? "text-emerald-200 group-hover:text-emerald-400" : "text-slate-200 group-hover:text-indigo-400"}`}>
+                    →
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

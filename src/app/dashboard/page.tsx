@@ -86,14 +86,19 @@ async function uploadResume(formData: FormData) {
   if (!user) redirect("/login");
 
   const file = formData.get("resume");
-  if (!(file instanceof File) || file.size === 0) redirect("/dashboard?resume_error=no-file");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect("/dashboard?resume_error=Please+select+a+PDF+file");
+  }
 
-  // Only allow PDF
   const lowerName = file.name.toLowerCase();
-  if (!lowerName.endsWith(".pdf")) redirect("/dashboard?resume_error=pdf-only");
-  if (file.size > 5 * 1024 * 1024) redirect("/dashboard?resume_error=file-too-large");
+  if (!lowerName.endsWith(".pdf")) {
+    redirect("/dashboard?resume_error=Only+PDF+files+are+allowed");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    redirect("/dashboard?resume_error=File+exceeds+the+5+MB+limit");
+  }
 
-  // Remove old resume if exists
+  // Remove old resume from storage if one already exists
   try {
     const { data: existing } = await supabase
       .from("profiles")
@@ -103,31 +108,43 @@ async function uploadResume(formData: FormData) {
     if (existing?.resume_path) {
       await supabase.storage.from("resumes").remove([existing.resume_path]);
     }
-  } catch { /* column may not exist yet */ }
+  } catch { /* ignore cleanup errors */ }
 
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `${user.id}/${Date.now()}-${safeName}`;
-  const arrayBuffer = await file.arrayBuffer();
+  const storagePath = `${user.id}/${Date.now()}-${safeName}`;
 
+  // Upload the File object directly — Supabase JS v2 accepts File/Blob natively.
+  // Do NOT convert to Buffer: Buffer is a Node.js global that is unavailable in
+  // Next.js 16 Turbopack server-action bundles and causes a hard 500 crash.
   const { error: uploadError } = await supabase.storage
     .from("resumes")
-    .upload(path, Buffer.from(arrayBuffer), {
+    .upload(storagePath, file, {
       contentType: "application/pdf",
       upsert: false,
     });
 
-  if (uploadError) redirect(`/dashboard?resume_error=${encodeURIComponent(uploadError.message)}`);
+  if (uploadError) {
+    redirect(`/dashboard?resume_error=${encodeURIComponent(uploadError.message)}`);
+  }
 
-  const { data: { publicUrl } } = supabase.storage.from("resumes").getPublicUrl(path);
+  const { data: { publicUrl } } = supabase.storage.from("resumes").getPublicUrl(storagePath);
 
-  // Gracefully try to save — columns may not exist yet
-  try {
-    await supabase.from("profiles").update({
+  // Save the reference to the profile.
+  // If this fails the columns likely don't exist yet — roll back the storage
+  // upload so the user gets a clear error instead of a silent failure.
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({
       resume_url: publicUrl,
       resume_name: file.name,
-      resume_path: path,
-    }).eq("id", user.id);
-  } catch { /* columns not yet in DB */ }
+      resume_path: storagePath,
+    })
+    .eq("id", user.id);
+
+  if (updateError) {
+    await supabase.storage.from("resumes").remove([storagePath]);
+    redirect(`/dashboard?resume_error=${encodeURIComponent("Could not save resume — " + updateError.message)}`);
+  }
 
   redirect("/dashboard?resume_success=1");
 }

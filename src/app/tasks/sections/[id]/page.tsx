@@ -152,7 +152,11 @@ export default async function SectionDetailPage({ params }: Props) {
     .eq("section_id", id)
     .order("created_at", { ascending: true });
 
-  const taskList = tasks ?? [];
+  // Guests only see publicly browsable tasks — direct-assignment (company-specific) tasks
+  // are hidden from unauthenticated users and require login to access.
+  const taskList = isGuest
+    ? (tasks ?? []).filter((t: any) => t.assignment_type !== "direct")
+    : (tasks ?? []);
 
   // ─── Student progress map ────────────────────────────────────────────────────
   // Only for logged-in students — guests have no progress to show.

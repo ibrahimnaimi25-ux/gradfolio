@@ -82,11 +82,10 @@ export default async function TasksPage({
     userMajor = profile?.major ?? null;
   }
 
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("sections")
     .select("*, tasks(count)")
     .order("major", { ascending: true });
-  if (error) throw new Error(error.message);
 
   const allSections: SectionWithTaskCount[] = (data ?? []).map((s: any) => ({
     ...s,

@@ -275,8 +275,14 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
   const isAdmin = profile?.role === "admin";
   const isStudent = profile?.role === "student";
 
+  // Company-specific (direct-assignment) tasks are login-only.
+  // Guests are redirected to sign in before they can view them.
+  if (isGuest && task.assignment_type === "direct") {
+    redirect(`/login?next=/tasks/${id}`);
+  }
+
   // Logged-in non-admin users are scoped to their major or direct assignment.
-  // Guests can read any task.
+  // Guests can read publicly browsable (major) tasks only.
   if (!isGuest && !isAdmin) {
     const isDirectlyAssigned = task.assigned_user_id === user!.id;
     const isMajorTask = !task.assigned_user_id && !!task.major && !!profile?.major && task.major === profile.major;
@@ -438,13 +444,13 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-1">
-                  Ready to participate?
+                  Want to participate?
                 </p>
                 <h2 className="text-xl font-bold text-slate-900">
-                  Sign in to submit your work
+                  Sign in to begin this task
                 </h2>
                 <p className="mt-1.5 text-sm text-slate-500">
-                  Create an account or log in to join tasks, submit work, and build your portfolio.
+                  Create a free account or log in to join tasks, submit your work, and build your portfolio.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3 shrink-0">
@@ -458,7 +464,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
                   href="/register"
                   className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-5 py-2.5 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50"
                 >
-                  Get Started
+                  Get Started Free
                 </Link>
               </div>
             </div>

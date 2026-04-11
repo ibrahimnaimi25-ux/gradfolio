@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { uploadResume, removeResume } from "./actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -76,98 +77,6 @@ async function updateMajor(formData: FormData) {
   const major = formData.get("major")?.toString().trim() || "";
   if (!MAJOR_NAMES.includes(major)) return;
   await supabase.from("profiles").update({ major }).eq("id", user.id);
-  redirect("/dashboard");
-}
-
-async function uploadResume(formData: FormData) {
-  "use server";
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const file = formData.get("resume");
-  if (!(file instanceof File) || file.size === 0) {
-    redirect("/dashboard?resume_error=Please+select+a+PDF+file");
-  }
-
-  const lowerName = file.name.toLowerCase();
-  if (!lowerName.endsWith(".pdf")) {
-    redirect("/dashboard?resume_error=Only+PDF+files+are+allowed");
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    redirect("/dashboard?resume_error=File+exceeds+the+5+MB+limit");
-  }
-
-  // Remove old resume from storage if one already exists
-  try {
-    const { data: existing } = await supabase
-      .from("profiles")
-      .select("resume_path")
-      .eq("id", user.id)
-      .maybeSingle<{ resume_path: string | null }>();
-    if (existing?.resume_path) {
-      await supabase.storage.from("resumes").remove([existing.resume_path]);
-    }
-  } catch { /* ignore cleanup errors */ }
-
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const storagePath = `${user.id}/${Date.now()}-${safeName}`;
-
-  // Upload the File object directly — Supabase JS v2 accepts File/Blob natively.
-  // Do NOT convert to Buffer: Buffer is a Node.js global that is unavailable in
-  // Next.js 16 Turbopack server-action bundles and causes a hard 500 crash.
-  const { error: uploadError } = await supabase.storage
-    .from("resumes")
-    .upload(storagePath, file, {
-      contentType: "application/pdf",
-      upsert: false,
-    });
-
-  if (uploadError) {
-    redirect(`/dashboard?resume_error=${encodeURIComponent(uploadError.message)}`);
-  }
-
-  const { data: { publicUrl } } = supabase.storage.from("resumes").getPublicUrl(storagePath);
-
-  // Save the reference to the profile.
-  // If this fails the columns likely don't exist yet — roll back the storage
-  // upload so the user gets a clear error instead of a silent failure.
-  const { error: updateError } = await supabase
-    .from("profiles")
-    .update({
-      resume_url: publicUrl,
-      resume_name: file.name,
-      resume_path: storagePath,
-    })
-    .eq("id", user.id);
-
-  if (updateError) {
-    await supabase.storage.from("resumes").remove([storagePath]);
-    redirect(`/dashboard?resume_error=${encodeURIComponent("Could not save resume — " + updateError.message)}`);
-  }
-
-  redirect("/dashboard?resume_success=1");
-}
-
-async function removeResume(formData: FormData) {
-  "use server";
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const path = formData.get("resume_path")?.toString() || "";
-  if (path) {
-    await supabase.storage.from("resumes").remove([path]);
-  }
-
-  try {
-    await supabase.from("profiles").update({
-      resume_url: null,
-      resume_name: null,
-      resume_path: null,
-    }).eq("id", user.id);
-  } catch { /* columns not yet in DB */ }
-
   redirect("/dashboard");
 }
 

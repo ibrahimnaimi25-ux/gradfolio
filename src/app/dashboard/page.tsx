@@ -494,7 +494,7 @@ export default async function DashboardPage({
                 )}
 
                 {/* Upload form */}
-                <form action={uploadResume} encType="multipart/form-data" className="space-y-3">
+                <form action={uploadResume} className="space-y-3">
                   <div>
                     <input
                       name="resume"

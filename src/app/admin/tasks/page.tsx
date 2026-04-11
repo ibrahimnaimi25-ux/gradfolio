@@ -47,6 +47,7 @@ type TaskRow = {
   assigned_user_id: string | null;
   section_id: string | null;
   created_at: string;
+  due_date: string | null;
 };
 
 type UserMap = Record<string, { full_name: string | null; major: string | null }>;
@@ -80,6 +81,21 @@ function getUserDisplayName(
   return `${fallbackPrefix} ${userId.slice(0, 8)}`;
 }
 
+function getDueDateInfo(dueDateStr: string | null) {
+  if (!dueDateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDateStr + "T00:00:00");
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const formatted = due.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  if (diffDays < 0) return { label: `Overdue · ${formatted}`, cls: "bg-rose-50 text-rose-700 ring-1 ring-rose-200" };
+  if (diffDays === 0) return { label: "Due today!", cls: "bg-rose-50 text-rose-700 ring-1 ring-rose-200" };
+  if (diffDays === 1) return { label: "Due tomorrow", cls: "bg-amber-50 text-amber-700 ring-1 ring-amber-200" };
+  if (diffDays <= 7) return { label: `Due in ${diffDays} days`, cls: "bg-amber-50 text-amber-700 ring-1 ring-amber-200" };
+  return { label: `Due ${formatted}`, cls: "bg-slate-100 text-slate-500" };
+}
+
 function decodeMessage(value: string | undefined) {
   if (!value) return null;
   try {
@@ -104,6 +120,7 @@ async function createTask(formData: FormData) {
   const major = String(formData.get("major") || "").trim();
   const assignedUserId = String(formData.get("assigned_user_id") || "").trim();
   const sectionId = String(formData.get("section_id") || "").trim() || null;
+  const dueDate = String(formData.get("due_date") || "").trim() || null;
 
   if (!title) redirect("/admin/tasks?error=missing-title#create-task");
   if (assignmentType === "major" && !major)
@@ -127,6 +144,7 @@ async function createTask(formData: FormData) {
     assigned_user_id: assignmentType === "direct" ? (assignedUserId || null) : null,
     created_by: user.id,
     section_id: sectionId,
+    due_date: dueDate,
   };
 
   const { error } = await supabase.from("tasks").insert(payload);
@@ -152,6 +170,7 @@ async function updateTask(formData: FormData) {
   const major = String(formData.get("major") || "").trim();
   const assignedUserId = String(formData.get("assigned_user_id") || "").trim();
   const sectionId = String(formData.get("section_id") || "").trim() || null;
+  const dueDate = String(formData.get("due_date") || "").trim() || null;
 
   if (!taskId) redirect("/admin/tasks?error=missing-task-id#manage-tasks");
   if (!title) redirect("/admin/tasks?error=title-required#manage-tasks");
@@ -174,6 +193,7 @@ async function updateTask(formData: FormData) {
     major: assignmentType === "major" ? (major || null) : null,
     assigned_user_id: assignmentType === "direct" ? (assignedUserId || null) : null,
     section_id: sectionId,
+    due_date: dueDate,
   };
 
   const { data, error } = await supabase
@@ -259,7 +279,7 @@ export default async function AdminTasksPage({
   let tasksQuery = supabase
     .from("tasks")
     .select(
-      "id, title, description, major, status, assignment_type, submission_type, assigned_user_id, section_id, created_at"
+      "id, title, description, major, status, assignment_type, submission_type, assigned_user_id, section_id, created_at, due_date"
     )
     .order("created_at", { ascending: false });
   if (majorFilter !== null) tasksQuery = tasksQuery.eq("major", majorFilter);
@@ -493,7 +513,7 @@ export default async function AdminTasksPage({
                 className={inputClass}
               />
             </div>
-            <div className="grid gap-5 md:grid-cols-3">
+            <div className="grid gap-5 md:grid-cols-4">
               <div>
                 <label htmlFor="status" className={labelClass}>Status</label>
                 <select id="status" name="status" defaultValue="open" className={inputClass}>
@@ -518,6 +538,10 @@ export default async function AdminTasksPage({
                   <option value="file">file</option>
                   <option value="image">image</option>
                 </select>
+              </div>
+              <div>
+                <label htmlFor="due_date" className={labelClass}>Due Date <span className="text-slate-400 font-normal">(optional)</span></label>
+                <input id="due_date" name="due_date" type="date" className={inputClass} />
               </div>
             </div>
             <div className="grid gap-5 md:grid-cols-3">
@@ -618,6 +642,14 @@ export default async function AdminTasksPage({
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                         {getSubmissionTypeLabel(task.submission_type)}
                       </span>
+                      {task.due_date && (() => {
+                        const info = getDueDateInfo(task.due_date);
+                        return info ? (
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${info.cls}`}>
+                            🗓 {info.label}
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                     <p className="mb-1 text-xs text-slate-400">Created: {formatDate(task.created_at)}</p>
                     {task.assignment_type === "direct" && assignedStudentName && (
@@ -650,7 +682,7 @@ export default async function AdminTasksPage({
                           className={inputClass}
                         />
                       </div>
-                      <div className="grid gap-4 md:grid-cols-3">
+                      <div className="grid gap-4 md:grid-cols-4">
                         <div>
                           <label htmlFor={`status-${task.id}`} className={labelClass}>Status</label>
                           <select
@@ -694,6 +726,18 @@ export default async function AdminTasksPage({
                             <option value="file">file</option>
                             <option value="image">image</option>
                           </select>
+                        </div>
+                        <div>
+                          <label htmlFor={`due_date-${task.id}`} className={labelClass}>
+                            Due Date <span className="text-slate-400 font-normal">(optional)</span>
+                          </label>
+                          <input
+                            id={`due_date-${task.id}`}
+                            name="due_date"
+                            type="date"
+                            defaultValue={task.due_date ?? ""}
+                            className={inputClass}
+                          />
                         </div>
                       </div>
                       <div className="grid gap-4 md:grid-cols-3">

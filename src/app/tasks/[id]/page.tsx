@@ -21,6 +21,7 @@ type TaskRow = {
   assignment_type: string | null;
   submission_type: SubmissionType | null;
   assigned_user_id: string | null;
+  due_date: string | null;
 };
 
 type ProfileRow = {
@@ -98,6 +99,21 @@ function getSubmissionTypeLabel(type: SubmissionType | null) {
     case "image": return "Image only";
     default: return "Any type";
   }
+}
+
+function getDueDateInfo(dueDateStr: string | null) {
+  if (!dueDateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDateStr + "T00:00:00");
+  due.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const formatted = due.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  if (diffDays < 0) return { label: `Overdue · ${formatted}`, cls: "bg-rose-50 text-rose-700 ring-1 ring-rose-200", urgent: true };
+  if (diffDays === 0) return { label: "Due today!", cls: "bg-rose-50 text-rose-700 ring-1 ring-rose-200", urgent: true };
+  if (diffDays === 1) return { label: "Due tomorrow", cls: "bg-amber-50 text-amber-700 ring-1 ring-amber-200", urgent: true };
+  if (diffDays <= 7) return { label: `Due in ${diffDays} days`, cls: "bg-amber-50 text-amber-700 ring-1 ring-amber-200", urgent: false };
+  return { label: `Due ${formatted}`, cls: "bg-slate-100 text-slate-500", urgent: false };
 }
 
 function getTaskStatusClasses(status: string | null) {
@@ -247,7 +263,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
 
   const { data: task, error: taskError } = await supabase
     .from("tasks")
-    .select("id, title, description, major, status, created_by, created_at, assignment_type, submission_type, assigned_user_id")
+    .select("id, title, description, major, status, created_by, created_at, assignment_type, submission_type, assigned_user_id, due_date")
     .eq("id", id).maybeSingle<TaskRow>();
   if (taskError || !task) notFound();
 
@@ -310,6 +326,14 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
               <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500">
                 {formatDate(task.created_at)}
               </span>
+              {task.due_date && (() => {
+                const info = getDueDateInfo(task.due_date);
+                return info ? (
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${info.cls}`}>
+                    🗓 {info.label}
+                  </span>
+                ) : null;
+              })()}
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
               {task.title}
@@ -349,6 +373,21 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
                     <p className="mt-0.5 capitalize text-slate-500">{item.value}</p>
                   </div>
                 ))}
+                {task.due_date && (() => {
+                  const info = getDueDateInfo(task.due_date);
+                  return (
+                    <div>
+                      <p className="font-medium text-slate-900">Due Date</p>
+                      {info ? (
+                        <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${info.cls}`}>
+                          🗓 {info.label}
+                        </span>
+                      ) : (
+                        <p className="mt-0.5 text-slate-500">—</p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 

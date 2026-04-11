@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { SectionWithTaskCount } from "@/types/sections";
 
@@ -69,16 +68,19 @@ export default async function TasksPage({
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, major")
-    .eq("id", user.id)
-    .maybeSingle();
+  let isAdmin = false;
+  let userMajor: string | null = null;
 
-  const isAdmin = profile?.role === "admin";
-  const userMajor = profile?.major ?? null;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, major")
+      .eq("id", user.id)
+      .maybeSingle();
+    isAdmin = profile?.role === "admin";
+    userMajor = profile?.major ?? null;
+  }
 
   const { data, error } = await supabase
     .from("sections")
@@ -91,10 +93,11 @@ export default async function TasksPage({
     task_count: s.tasks?.[0]?.count ?? 0,
   }));
 
-  // Students see only their own major's sections; admins see all
-  const majorFiltered = isAdmin
-    ? allSections
-    : allSections.filter((s) => s.major === userMajor);
+  // Guests and admins see all sections; students see only their major
+  const majorFiltered =
+    !user || isAdmin
+      ? allSections
+      : allSections.filter((s) => s.major === userMajor);
 
   // Apply search filter (section name or description)
   const sections = q
@@ -131,11 +134,13 @@ export default async function TasksPage({
               <p className="text-slate-500 mt-1 text-sm">
                 {isAdmin
                   ? "All sections across every major."
-                  : `Sections for your major — ${userMajor ?? "unknown"}.`}
+                  : user && userMajor
+                  ? `Sections for your major — ${userMajor}.`
+                  : "Explore tasks across all majors."}
               </p>
             </div>
-            {/* Major badge for students */}
-            {!isAdmin && userMajor && (
+            {/* Major badge for logged-in students */}
+            {user && !isAdmin && userMajor && (
               <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-sm font-medium text-indigo-700">
                 <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
                 Your major: {userMajor}
@@ -200,14 +205,14 @@ export default async function TasksPage({
             <h3 className="text-lg font-semibold text-slate-800 mb-1">
               {q
                 ? `No sections match "${q}"`
-                : userMajor && !isAdmin
+                : user && userMajor && !isAdmin
                 ? `No sections for ${userMajor} yet`
                 : "No sections yet"}
             </h3>
             <p className="text-sm text-slate-400 max-w-xs">
               {q
                 ? "Try a different search term."
-                : userMajor && !isAdmin
+                : user && userMajor && !isAdmin
                 ? "An admin hasn't created any sections for your major yet. Check back soon."
                 : "Ask an admin to create sections and assign tasks."}
             </p>
@@ -220,12 +225,14 @@ export default async function TasksPage({
                   Clear search
                 </a>
               )}
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
-              >
-                ← Back to Dashboard
-              </Link>
+              {user && (
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+                >
+                  ← Back to Dashboard
+                </Link>
+              )}
             </div>
           </div>
         ) : (

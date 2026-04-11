@@ -254,12 +254,16 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
   const successMessage = decodeMessage(resolvedSearchParams.success);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles").select("id, full_name, role, major").eq("id", user.id)
-    .maybeSingle<ProfileRow>();
-  if (profileError || !profile) notFound();
+  // Fetch profile only when logged in
+  let profile: ProfileRow | null = null;
+  if (user) {
+    const { data, error: profileError } = await supabase
+      .from("profiles").select("id, full_name, role, major").eq("id", user.id)
+      .maybeSingle<ProfileRow>();
+    if (profileError || !data) notFound();
+    profile = data;
+  }
 
   const { data: task, error: taskError } = await supabase
     .from("tasks")
@@ -267,16 +271,22 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
     .eq("id", id).maybeSingle<TaskRow>();
   if (taskError || !task) notFound();
 
-  const isAdmin = profile.role === "admin";
-  const isDirectlyAssigned = task.assigned_user_id === user.id;
-  const isMajorTask = !task.assigned_user_id && !!task.major && !!profile.major && task.major === profile.major;
-  const canAccessTask = isAdmin || isDirectlyAssigned || isMajorTask;
-  if (!canAccessTask) notFound();
+  const isGuest = !user;
+  const isAdmin = profile?.role === "admin";
+  const isStudent = profile?.role === "student";
+
+  // Logged-in non-admin users are scoped to their major or direct assignment.
+  // Guests can read any task.
+  if (!isGuest && !isAdmin) {
+    const isDirectlyAssigned = task.assigned_user_id === user!.id;
+    const isMajorTask = !task.assigned_user_id && !!task.major && !!profile?.major && task.major === profile.major;
+    if (!isDirectlyAssigned && !isMajorTask) notFound();
+  }
 
   let studentSubmission: SubmissionRow | null = null;
   let reviewerProfile: ReviewerRow | null = null;
 
-  if (profile.role === "student") {
+  if (isStudent && user) {
     const { data: submission } = await supabase
       .from("submissions")
       .select("id, user_id, task_id, content, link_url, file_name, file_path, file_url, file_type, file_size, submitted_at, admin_feedback, reviewed_at, reviewed_by")
@@ -362,8 +372,12 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
               </p>
               <div className="space-y-4 text-sm">
                 {[
-                  { label: "Your Role", value: profile.role },
-                  { label: "Your Major", value: profile.major || "—" },
+                  ...(!isGuest
+                    ? [
+                        { label: "Your Role", value: profile!.role },
+                        { label: "Your Major", value: profile!.major || "—" },
+                      ]
+                    : []),
                   { label: "Assignment", value: task.assignment_type || "—" },
                   { label: "Submission", value: getSubmissionTypeLabel(task.submission_type) },
                   { label: "Status", value: task.status || "open" },
@@ -391,7 +405,7 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
               </div>
             </div>
 
-            {profile.role === "student" && (
+            {isStudent && (
               <div className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-4">
                   Submission Status
@@ -418,8 +432,41 @@ export default async function TaskDetailsPage({ params, searchParams }: PageProp
           </aside>
         </div>
 
+        {/* Guest CTA — prompt to sign in */}
+        {isGuest && (
+          <section className="mt-6 rounded-3xl border border-indigo-100 bg-indigo-50 p-8 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-1">
+                  Ready to participate?
+                </p>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Sign in to submit your work
+                </h2>
+                <p className="mt-1.5 text-sm text-slate-500">
+                  Create an account or log in to join tasks, submit work, and build your portfolio.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3 shrink-0">
+                <Link
+                  href={`/login?next=/tasks/${task.id}`}
+                  className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/register"
+                  className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-white px-5 py-2.5 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50"
+                >
+                  Get Started
+                </Link>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Student submission form + history */}
-        {profile.role === "student" && (
+        {isStudent && (
           <>
             {/* Alerts */}
             {(successMessage || errorMessage) && (

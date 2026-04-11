@@ -26,6 +26,7 @@ export default async function Navbar() {
   const studentLinks = [
     { href: "/", label: "Home" },
     { href: "/tasks", label: "Tasks" },
+    { href: "/submissions", label: "My Work" },
     { href: "/dashboard", label: "Dashboard" },
   ];
 

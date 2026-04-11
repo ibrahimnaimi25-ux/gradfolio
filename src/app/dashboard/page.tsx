@@ -362,8 +362,15 @@ export default async function DashboardPage({
                 Explore available tasks and join work that fits your growth.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-wrap gap-2">
               <Button href="/tasks">Go to Tasks</Button>
+              {!isStaff && (
+                <Button href="/submissions" variant="secondary">
+                  {submissionsCount && submissionsCount > 0
+                    ? `My Work (${submissionsCount})`
+                    : "My Work"}
+                </Button>
+              )}
             </CardContent>
           </Card>
 

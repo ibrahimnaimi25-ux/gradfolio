@@ -148,40 +148,50 @@ export default async function StudentPortfolioPage({
   const isManager = viewerRole === "manager";
   const isOwner = user.id === id;
 
-  // Fetch the target student profile — base columns only (always exist)
+  // Fetch guaranteed-existing columns only
   const { data: baseProfile } = await supabase
     .from("profiles")
-    .select("id, full_name, major, role, bio, linkedin_url, github_url, resume_url, resume_name")
+    .select("id, full_name, major, role")
     .eq("id", id)
-    .maybeSingle<Pick<Profile, "id" | "full_name" | "major" | "role" | "bio" | "linkedin_url" | "github_url" | "resume_url" | "resume_name">>();
+    .maybeSingle<Pick<Profile, "id" | "full_name" | "major" | "role">>();
 
-  // Only students have portfolios; admins/managers don't
+  // Only students have portfolios
   if (!baseProfile || baseProfile.role !== "student") notFound();
 
-  // Fetch optional new columns — silently degrade if migration hasn't run yet
+  // Fetch all optional columns in one try/catch — degrades gracefully before migration
+  let bio: string | null = null;
   let headline: string | null = null;
   let skills: string | null = null;
+  let linkedin_url: string | null = null;
+  let github_url: string | null = null;
   let behance_url: string | null = null;
   let website_url: string | null = null;
   let resume_link: string | null = null;
+  let resume_url: string | null = null;
+  let resume_name: string | null = null;
   let avatar_url: string | null = null;
   try {
     const { data: extras } = await supabase
       .from("profiles")
-      .select("headline, skills, behance_url, website_url, resume_link, avatar_url")
+      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url")
       .eq("id", id)
-      .maybeSingle<Pick<Profile, "headline" | "skills" | "behance_url" | "website_url" | "resume_link" | "avatar_url">>();
+      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role">>();
+    bio = extras?.bio ?? null;
     headline = extras?.headline ?? null;
     skills = extras?.skills ?? null;
+    linkedin_url = extras?.linkedin_url ?? null;
+    github_url = extras?.github_url ?? null;
     behance_url = extras?.behance_url ?? null;
     website_url = extras?.website_url ?? null;
     resume_link = extras?.resume_link ?? null;
+    resume_url = extras?.resume_url ?? null;
+    resume_name = extras?.resume_name ?? null;
     avatar_url = extras?.avatar_url ?? null;
   } catch {
-    // new columns not yet migrated — show profile without them
+    // columns not yet migrated — show profile without them
   }
 
-  const profile: Profile = { ...baseProfile, headline, skills, behance_url, website_url, resume_link, avatar_url };
+  const profile: Profile = { ...baseProfile, bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url };
 
   // Access control
   // - Admin: sees all

@@ -42,20 +42,11 @@ type SubmissionWithTask = {
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { id } = await params;
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("profiles")
-    .select("full_name, headline, major")
-    .eq("id", id)
-    .eq("role", "student")
-    .maybeSingle();
-  if (!data) return { title: "Portfolio | GradFolio" };
+  // Portfolios are private — never expose student details to crawlers
+  void params; // params unused; title is intentionally generic
   return {
-    title: `${data.full_name ?? "Student"} — Portfolio | GradFolio`,
-    description:
-      data.headline ??
-      `View ${data.full_name ?? "this student"}'s portfolio on GradFolio.`,
+    title: "Portfolio | GradFolio",
+    robots: { index: false, follow: false },
   };
 }
 
@@ -158,6 +149,24 @@ export default async function StudentPortfolioPage({
   // Only students have portfolios
   if (!baseProfile || baseProfile.role !== "student") notFound();
 
+  // ── Access control ─────────────────────────────────────────────────────────
+  // Enforce BEFORE fetching any further profile data.
+  // Allowed: portfolio owner · admin · manager scoped to the student's major.
+  // Denied (→ /dashboard): any other authenticated user, including students
+  //   viewing a peer, managers outside their scope, and users with no profile row.
+  if (!isOwner && !isAdmin) {
+    if (!isManager) {
+      redirect("/dashboard");
+    }
+    if (
+      !viewerProfile?.assigned_major ||
+      baseProfile.major !== viewerProfile.assigned_major
+    ) {
+      redirect("/dashboard");
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   // Fetch all optional columns in one try/catch — degrades gracefully before migration
   let bio: string | null = null;
   let headline: string | null = null;
@@ -193,18 +202,6 @@ export default async function StudentPortfolioPage({
 
   const profile: Profile = { ...baseProfile, bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url };
 
-  // Access control
-  // - Admin: sees all
-  // - Manager: only sees students in their assigned major
-  // - Student: sees all student portfolios (can edit own only)
-  if (
-    isManager &&
-    !isAdmin &&
-    viewerProfile?.assigned_major &&
-    profile.major !== viewerProfile.assigned_major
-  ) {
-    notFound();
-  }
 
   // Submissions (approved only for public portfolio display)
   const { data: submissionsRaw } = await supabase

@@ -14,28 +14,48 @@ export async function saveProfile(formData: FormData) {
   const profileId = formData.get("profile_id")?.toString() ?? "";
   if (profileId !== user.id) redirect(`/students/${profileId}`);
 
-  const payload = {
-    full_name: formData.get("full_name")?.toString().trim() || null,
-    headline: formData.get("headline")?.toString().trim() || null,
-    bio: formData.get("bio")?.toString().trim() || null,
-    major: formData.get("major")?.toString().trim() || null,
-    skills: formData.get("skills")?.toString().trim() || null,
-    linkedin_url: formData.get("linkedin_url")?.toString().trim() || null,
-    github_url: formData.get("github_url")?.toString().trim() || null,
-    behance_url: formData.get("behance_url")?.toString().trim() || null,
-    website_url: formData.get("website_url")?.toString().trim() || null,
-    resume_link: formData.get("resume_link")?.toString().trim() || null,
-  };
+  const str = (key: string) =>
+    formData.get(key)?.toString().trim() || null;
 
-  const { error } = await supabase
+  // Step 1 — always-present columns (guaranteed to exist)
+  const { error: baseError } = await supabase
     .from("profiles")
-    .update(payload)
+    .update({ full_name: str("full_name"), major: str("major") })
     .eq("id", user.id);
 
-  if (error) {
+  if (baseError) {
     redirect(
-      `/students/${user.id}/edit?error=${encodeURIComponent(error.message)}`
+      `/students/${user.id}/edit?error=${encodeURIComponent(baseError.message)}`
     );
+  }
+
+  // Step 2 — optional columns; skip gracefully if column doesn't exist yet
+  const optionalFields: Record<string, string | null> = {
+    bio:          str("bio"),
+    headline:     str("headline"),
+    skills:       str("skills"),
+    linkedin_url: str("linkedin_url"),
+    github_url:   str("github_url"),
+    behance_url:  str("behance_url"),
+    website_url:  str("website_url"),
+    resume_link:  str("resume_link"),
+  };
+
+  // Try all optional fields together first (fast path after migration)
+  const { error: optError } = await supabase
+    .from("profiles")
+    .update(optionalFields)
+    .eq("id", user.id);
+
+  // If bulk optional update fails (missing column), fall back field-by-field
+  if (optError) {
+    for (const [col, val] of Object.entries(optionalFields)) {
+      await supabase
+        .from("profiles")
+        .update({ [col]: val })
+        .eq("id", user.id);
+      // ignore per-column errors — column may not exist yet
+    }
   }
 
   revalidatePath(`/students/${user.id}`);

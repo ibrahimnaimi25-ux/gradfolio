@@ -1,11 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MAJOR_NAMES } from "@/lib/majors";
-import {
-  saveProfile,
-  uploadAvatar,
-  removeAvatar,
-} from "@/app/students/[id]/actions";
+import { saveProfile } from "@/app/students/[id]/actions";
+import AvatarForm from "./avatar-form";
 import type { Metadata } from "next";
 
 interface Props {
@@ -81,16 +78,6 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
     website_url, resume_link, resume_url, resume_name, avatar_url,
   };
 
-  function getInitials(name: string | null) {
-    if (!name) return "?";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
-  }
-
   return (
     <main className="min-h-screen bg-slate-50 pb-24">
       <div className="mx-auto max-w-2xl px-4 py-10 md:px-6">
@@ -125,58 +112,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
             Profile Photo
           </h2>
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            {/* Preview */}
-            {p.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={p.avatar_url}
-                alt="Profile photo"
-                className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow"
-              />
-            ) : (
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-2xl font-bold text-white shadow">
-                {getInitials(p.full_name)}
-              </div>
-            )}
-
-            <div className="flex flex-col gap-2">
-              {/* Upload new photo */}
-              <form action={uploadAvatar} className="flex items-center gap-2">
-                <label
-                  htmlFor="avatar-input"
-                  className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
-                >
-                  Choose photo
-                  <input
-                    id="avatar-input"
-                    name="avatar"
-                    type="file"
-                    accept="image/jpeg,image/jpg,image/png,image/webp"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const form = e.currentTarget.closest("form");
-                      if (form && e.currentTarget.files?.length) form.requestSubmit();
-                    }}
-                  />
-                </label>
-                <span className="text-xs text-slate-400">JPG, PNG or WebP · max 2 MB</span>
-              </form>
-
-              {/* Remove photo */}
-              {p.avatar_url && (
-                <form action={removeAvatar}>
-                  <input type="hidden" name="avatar_url" value={p.avatar_url} />
-                  <button
-                    type="submit"
-                    className="text-xs font-medium text-red-500 transition hover:text-red-700"
-                  >
-                    Remove photo
-                  </button>
-                </form>
-              )}
-            </div>
-          </div>
+          <AvatarForm avatarUrl={p.avatar_url} fullName={p.full_name} />
         </section>
 
         {/* ── Main profile form ─────────────────────────────────────────── */}

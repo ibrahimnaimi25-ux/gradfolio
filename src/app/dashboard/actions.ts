@@ -66,24 +66,31 @@ export async function uploadResume(formData: FormData) {
     data: { publicUrl },
   } = supabase.storage.from("resumes").getPublicUrl(storagePath);
 
-  // Persist the reference. If columns don't exist yet this returns an error —
-  // roll back the storage upload so the user gets a clear message.
+  // Persist the reference.
+  // Try with resume_path first (for later cleanup). If that column doesn't
+  // exist yet, fall back to just resume_url + resume_name so the upload still
+  // succeeds. Only roll back the storage file if BOTH attempts fail.
   const { error: updateError } = await supabase
     .from("profiles")
-    .update({
-      resume_url: publicUrl,
-      resume_name: file.name,
-      resume_path: storagePath,
-    })
+    .update({ resume_url: publicUrl, resume_name: file.name, resume_path: storagePath })
     .eq("id", user.id);
 
   if (updateError) {
-    await supabase.storage.from("resumes").remove([storagePath]);
-    redirect(
-      `/dashboard?resume_error=${encodeURIComponent(
-        "Could not save resume — " + updateError.message
-      )}`
-    );
+    // Likely missing resume_path column — retry without it
+    const { error: fallbackError } = await supabase
+      .from("profiles")
+      .update({ resume_url: publicUrl, resume_name: file.name })
+      .eq("id", user.id);
+
+    if (fallbackError) {
+      // Both failed — roll back the storage upload
+      await supabase.storage.from("resumes").remove([storagePath]);
+      redirect(
+        `/dashboard?resume_error=${encodeURIComponent(
+          "Could not save resume — " + fallbackError.message
+        )}`
+      );
+    }
   }
 
   redirect("/dashboard?resume_success=1");
@@ -101,17 +108,26 @@ export async function removeResume(formData: FormData) {
     await supabase.storage.from("resumes").remove([path]);
   }
 
+  // Try clearing all three columns; if resume_path doesn't exist yet,
+  // fall back to clearing just resume_url + resume_name.
   const { error: updateError } = await supabase
     .from("profiles")
     .update({ resume_url: null, resume_name: null, resume_path: null })
     .eq("id", user.id);
 
   if (updateError) {
-    redirect(
-      `/dashboard?resume_error=${encodeURIComponent(
-        "Could not remove resume — " + updateError.message
-      )}`
-    );
+    const { error: fallbackError } = await supabase
+      .from("profiles")
+      .update({ resume_url: null, resume_name: null })
+      .eq("id", user.id);
+
+    if (fallbackError) {
+      redirect(
+        `/dashboard?resume_error=${encodeURIComponent(
+          "Could not remove resume — " + fallbackError.message
+        )}`
+      );
+    }
   }
 
   redirect("/dashboard");

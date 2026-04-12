@@ -29,43 +29,67 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
   if (!user) redirect(`/login?next=/students/${id}/edit`);
   if (user.id !== id) redirect(`/students/${id}`);
 
-  // Fetch all profile fields
-  const { data: profile } = await supabase
+  // Fetch base columns (always exist)
+  const { data: baseProfile } = await supabase
     .from("profiles")
-    .select(
-      "full_name, headline, bio, major, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url"
-    )
+    .select("full_name, bio, major, linkedin_url, github_url, resume_url, resume_name")
     .eq("id", id)
     .maybeSingle<{
       full_name: string | null;
-      headline: string | null;
       bio: string | null;
       major: string | null;
-      skills: string | null;
       linkedin_url: string | null;
       github_url: string | null;
-      behance_url: string | null;
-      website_url: string | null;
-      resume_link: string | null;
       resume_url: string | null;
       resume_name: string | null;
-      avatar_url: string | null;
     }>();
 
-  const p = profile ?? {
-    full_name: null,
-    headline: null,
-    bio: null,
-    major: null,
-    skills: null,
-    linkedin_url: null,
-    github_url: null,
-    behance_url: null,
-    website_url: null,
-    resume_link: null,
-    resume_url: null,
-    resume_name: null,
-    avatar_url: null,
+  // Fetch optional new columns — silently degrade if migration hasn't run yet
+  let headline: string | null = null;
+  let skills: string | null = null;
+  let behance_url: string | null = null;
+  let website_url: string | null = null;
+  let resume_link: string | null = null;
+  let avatar_url: string | null = null;
+  try {
+    const { data: extras } = await supabase
+      .from("profiles")
+      .select("headline, skills, behance_url, website_url, resume_link, avatar_url")
+      .eq("id", id)
+      .maybeSingle<{
+        headline: string | null;
+        skills: string | null;
+        behance_url: string | null;
+        website_url: string | null;
+        resume_link: string | null;
+        avatar_url: string | null;
+      }>();
+    headline = extras?.headline ?? null;
+    skills = extras?.skills ?? null;
+    behance_url = extras?.behance_url ?? null;
+    website_url = extras?.website_url ?? null;
+    resume_link = extras?.resume_link ?? null;
+    avatar_url = extras?.avatar_url ?? null;
+  } catch {
+    // new columns not yet migrated — degrade gracefully
+  }
+
+  const p = {
+    ...(baseProfile ?? {
+      full_name: null,
+      bio: null,
+      major: null,
+      linkedin_url: null,
+      github_url: null,
+      resume_url: null,
+      resume_name: null,
+    }),
+    headline,
+    skills,
+    behance_url,
+    website_url,
+    resume_link,
+    avatar_url,
   };
 
   function getInitials(name: string | null) {

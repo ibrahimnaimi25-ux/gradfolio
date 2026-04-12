@@ -148,17 +148,40 @@ export default async function StudentPortfolioPage({
   const isManager = viewerRole === "manager";
   const isOwner = user.id === id;
 
-  // Fetch the target student profile
-  const { data: profile } = await supabase
+  // Fetch the target student profile — base columns only (always exist)
+  const { data: baseProfile } = await supabase
     .from("profiles")
-    .select(
-      "id, full_name, headline, major, role, bio, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url"
-    )
+    .select("id, full_name, major, role, bio, linkedin_url, github_url, resume_url, resume_name")
     .eq("id", id)
-    .maybeSingle<Profile>();
+    .maybeSingle<Pick<Profile, "id" | "full_name" | "major" | "role" | "bio" | "linkedin_url" | "github_url" | "resume_url" | "resume_name">>();
 
   // Only students have portfolios; admins/managers don't
-  if (!profile || profile.role !== "student") notFound();
+  if (!baseProfile || baseProfile.role !== "student") notFound();
+
+  // Fetch optional new columns — silently degrade if migration hasn't run yet
+  let headline: string | null = null;
+  let skills: string | null = null;
+  let behance_url: string | null = null;
+  let website_url: string | null = null;
+  let resume_link: string | null = null;
+  let avatar_url: string | null = null;
+  try {
+    const { data: extras } = await supabase
+      .from("profiles")
+      .select("headline, skills, behance_url, website_url, resume_link, avatar_url")
+      .eq("id", id)
+      .maybeSingle<Pick<Profile, "headline" | "skills" | "behance_url" | "website_url" | "resume_link" | "avatar_url">>();
+    headline = extras?.headline ?? null;
+    skills = extras?.skills ?? null;
+    behance_url = extras?.behance_url ?? null;
+    website_url = extras?.website_url ?? null;
+    resume_link = extras?.resume_link ?? null;
+    avatar_url = extras?.avatar_url ?? null;
+  } catch {
+    // new columns not yet migrated — show profile without them
+  }
+
+  const profile: Profile = { ...baseProfile, headline, skills, behance_url, website_url, resume_link, avatar_url };
 
   // Access control
   // - Admin: sees all

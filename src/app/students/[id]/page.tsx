@@ -1,20 +1,29 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Metadata } from "next";
 import Link from "next/link";
+import type { Metadata } from "next";
 
 interface Props {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ saved?: string }>;
 }
 
 type Profile = {
   id: string;
   full_name: string | null;
+  headline: string | null;
   major: string | null;
   role: string;
   bio: string | null;
+  skills: string | null;
   linkedin_url: string | null;
   github_url: string | null;
+  behance_url: string | null;
+  website_url: string | null;
+  resume_link: string | null;
+  resume_url: string | null;
+  resume_name: string | null;
+  avatar_url: string | null;
 };
 
 type SubmissionWithTask = {
@@ -24,7 +33,6 @@ type SubmissionWithTask = {
   review_status: string | null;
   admin_feedback: string | null;
   reviewed_at: string | null;
-  submitted_at: string | null;
   tasks: {
     id: string;
     title: string;
@@ -38,14 +46,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")
-    .select("full_name, major")
+    .select("full_name, headline, major")
     .eq("id", id)
     .eq("role", "student")
     .maybeSingle();
   if (!data) return { title: "Portfolio | GradFolio" };
   return {
     title: `${data.full_name ?? "Student"} — Portfolio | GradFolio`,
-    description: `View ${data.full_name ?? "this student"}'s completed tasks and proof of work on GradFolio.`,
+    description:
+      data.headline ??
+      `View ${data.full_name ?? "this student"}'s portfolio on GradFolio.`,
   };
 }
 
@@ -83,11 +93,16 @@ function getInitials(name: string | null) {
     .toUpperCase();
 }
 
-const MAJOR_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  Cybersecurity: { bg: "bg-violet-50", text: "text-violet-700", dot: "bg-violet-500" },
-  Marketing: { bg: "bg-pink-50", text: "text-pink-700", dot: "bg-pink-500" },
-  Business: { bg: "bg-sky-50", text: "text-sky-700", dot: "bg-sky-500" },
-};
+const MAJOR_COLORS: Record<string, { bg: string; text: string; dot: string }> =
+  {
+    Cybersecurity: {
+      bg: "bg-violet-50",
+      text: "text-violet-700",
+      dot: "bg-violet-500",
+    },
+    Marketing: { bg: "bg-pink-50", text: "text-pink-700", dot: "bg-pink-500" },
+    Business: { bg: "bg-sky-50", text: "text-sky-700", dot: "bg-sky-500" },
+  };
 
 function MajorBadge({ major }: { major: string | null }) {
   if (!major) return null;
@@ -106,71 +121,105 @@ function MajorBadge({ major }: { major: string | null }) {
   );
 }
 
-export default async function StudentPortfolioPage({ params }: Props) {
+export default async function StudentPortfolioPage({
+  params,
+  searchParams,
+}: Props) {
   const { id } = await params;
+  const { saved } = await searchParams;
+
   const supabase = await createClient();
 
-  // Fetch student profile — only show students, not admins/managers
-  // bio, linkedin_url, github_url are optional columns — added later via migration
-  const { data: profile } = await supabase
+  // Auth required — guests go to login
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect(`/login?next=/students/${id}`);
+
+  // Fetch viewer's role for access control
+  const { data: viewerProfile } = await supabase
+    .from("profiles")
+    .select("role, assigned_major")
+    .eq("id", user.id)
+    .maybeSingle<{ role: string; assigned_major: string | null }>();
+
+  const viewerRole = viewerProfile?.role ?? "student";
+  const isAdmin = viewerRole === "admin";
+  const isManager = viewerRole === "manager";
+  const isOwner = user.id === id;
+
+  // Fetch guaranteed-existing columns only
+  const { data: baseProfile } = await supabase
     .from("profiles")
     .select("id, full_name, major, role")
     .eq("id", id)
-    .maybeSingle<Omit<Profile, "bio" | "linkedin_url" | "github_url">>();
+    .maybeSingle<Pick<Profile, "id" | "full_name" | "major" | "role">>();
 
-  if (!profile || (profile.role !== "student" && profile.role !== "admin" && profile.role !== "manager")) notFound();
+  // Only students have portfolios
+  if (!baseProfile || baseProfile.role !== "student") notFound();
 
-  // Try to fetch optional profile fields — won't crash if columns don't exist yet
+  // Fetch all optional columns in one try/catch — degrades gracefully before migration
   let bio: string | null = null;
+  let headline: string | null = null;
+  let skills: string | null = null;
   let linkedin_url: string | null = null;
   let github_url: string | null = null;
+  let behance_url: string | null = null;
+  let website_url: string | null = null;
+  let resume_link: string | null = null;
   let resume_url: string | null = null;
   let resume_name: string | null = null;
+  let avatar_url: string | null = null;
   try {
     const { data: extras } = await supabase
       .from("profiles")
-      .select("bio, linkedin_url, github_url, resume_url, resume_name")
+      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url")
       .eq("id", id)
-      .maybeSingle<{
-        bio: string | null;
-        linkedin_url: string | null;
-        github_url: string | null;
-        resume_url: string | null;
-        resume_name: string | null;
-      }>();
+      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role">>();
     bio = extras?.bio ?? null;
+    headline = extras?.headline ?? null;
+    skills = extras?.skills ?? null;
     linkedin_url = extras?.linkedin_url ?? null;
     github_url = extras?.github_url ?? null;
+    behance_url = extras?.behance_url ?? null;
+    website_url = extras?.website_url ?? null;
+    resume_link = extras?.resume_link ?? null;
     resume_url = extras?.resume_url ?? null;
     resume_name = extras?.resume_name ?? null;
+    avatar_url = extras?.avatar_url ?? null;
   } catch {
-    // columns don't exist yet — silently skip
+    // columns not yet migrated — show profile without them
   }
 
-  const fullProfile: Profile = { ...profile, bio, linkedin_url, github_url };
-  // resume stored separately
-  const hasResume = !!resume_url;
+  const profile: Profile = { ...baseProfile, bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url };
 
-  // Fetch reviewed submissions with task data
+  // Access control
+  // - Admin: sees all
+  // - Manager: only sees students in their assigned major
+  // - Student: sees all student portfolios (can edit own only)
+  if (
+    isManager &&
+    !isAdmin &&
+    viewerProfile?.assigned_major &&
+    profile.major !== viewerProfile.assigned_major
+  ) {
+    notFound();
+  }
+
+  // Submissions (approved only for public portfolio display)
   const { data: submissionsRaw } = await supabase
     .from("submissions")
     .select(
-      "id, task_id, score, review_status, admin_feedback, reviewed_at, submitted_at, tasks(id, title, major, section_id)"
+      "id, task_id, score, review_status, admin_feedback, reviewed_at, tasks(id, title, major, section_id)"
     )
     .eq("user_id", id)
-    .not("reviewed_at", "is", null)
+    .eq("review_status", "approved")
     .order("reviewed_at", { ascending: false })
     .returns<SubmissionWithTask[]>();
 
-  const submissions = (submissionsRaw ?? []).filter(
-    (s) =>
-      s.tasks &&
-      (s.review_status === "approved" ||
-        s.review_status === null || // legacy reviewed
-        !s.review_status)
-  );
+  const submissions = (submissionsRaw ?? []).filter((s) => s.tasks);
 
-  // Fetch section names for submissions
+  // Fetch section names
   const sectionIds = Array.from(
     new Set(
       submissions.map((s) => s.tasks?.section_id).filter(Boolean) as string[]
@@ -187,7 +236,6 @@ export default async function StudentPortfolioPage({ params }: Props) {
     });
   }
 
-  // Stats
   const totalCompleted = submissions.length;
   const scoredSubmissions = submissions.filter((s) => s.score);
   const avgScore =
@@ -199,64 +247,112 @@ export default async function StudentPortfolioPage({ params }: Props) {
     new Set(submissions.map((s) => s.tasks?.major).filter(Boolean))
   ) as string[];
 
-  const { full_name, major, role } = fullProfile;
-  const firstName = full_name?.split(" ")[0] ?? "Student";
+  const firstName = profile.full_name?.split(" ")[0] ?? "Student";
+
+  // Parse skills string → array
+  const skillTags = profile.skills
+    ? profile.skills
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
 
   return (
     <main className="min-h-screen bg-slate-50 pb-24">
+      <div className="mx-auto max-w-4xl px-4 py-10 md:px-6">
 
-      {/* Top bar */}
-      <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4 md:px-6">
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-sm font-semibold text-slate-700"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-xs font-bold text-white">
-              G
-            </div>
-            GradFolio
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-xl bg-slate-900 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700"
-          >
-            Join GradFolio
-          </Link>
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-4xl px-4 md:px-6">
+        {/* Saved banner */}
+        {saved === "1" && (
+          <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+            Profile saved successfully.
+          </div>
+        )}
 
         {/* Profile header */}
-        <section className="mt-8 rounded-3xl border border-black/5 bg-white p-8 shadow-sm">
+        <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
 
             {/* Avatar */}
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-2xl font-bold text-white shadow-md">
-              {getInitials(fullProfile.full_name)}
-            </div>
+            {profile.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={profile.avatar_url}
+                alt={profile.full_name ?? "Profile photo"}
+                className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow-md"
+              />
+            ) : (
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-2xl font-bold text-white shadow-md">
+                {getInitials(profile.full_name)}
+              </div>
+            )}
 
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                  {fullProfile.full_name ?? "Student"}
-                </h1>
-                <MajorBadge major={fullProfile.major} />
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                      {profile.full_name ?? "Student"}
+                    </h1>
+                    <MajorBadge major={profile.major} />
+                  </div>
+                  {profile.headline && (
+                    <p className="mt-1 text-sm font-medium text-slate-500">
+                      {profile.headline}
+                    </p>
+                  )}
+                </div>
+
+                {/* Edit button (owner only) */}
+                {isOwner && (
+                  <Link
+                    href={`/students/${id}/edit`}
+                    className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
+                  >
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
+                    </svg>
+                    Edit Profile
+                  </Link>
+                )}
               </div>
 
-              {fullProfile.bio && (
+              {/* Bio */}
+              {profile.bio && (
                 <p className="mt-3 max-w-xl text-sm leading-7 text-slate-500">
-                  {fullProfile.bio}
+                  {profile.bio}
                 </p>
               )}
 
-              {/* External links + Resume */}
-              <div className="mt-4 flex flex-wrap gap-3">
-                {fullProfile.linkedin_url && (
+              {/* Skills */}
+              {skillTags.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {skillTags.map((skill) => (
+                    <span
+                      key={skill}
+                      className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Links */}
+              <div className="mt-4 flex flex-wrap gap-2">
+                {profile.linkedin_url && (
                   <a
-                    href={fullProfile.linkedin_url}
+                    href={profile.linkedin_url}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-blue-300 hover:text-blue-600"
@@ -267,9 +363,9 @@ export default async function StudentPortfolioPage({ params }: Props) {
                     LinkedIn
                   </a>
                 )}
-                {fullProfile.github_url && (
+                {profile.github_url && (
                   <a
-                    href={fullProfile.github_url}
+                    href={profile.github_url}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-900"
@@ -280,14 +376,51 @@ export default async function StudentPortfolioPage({ params }: Props) {
                     GitHub
                   </a>
                 )}
-
-                {/* Resume download — highlighted so employers notice it */}
-                {hasResume && (
+                {profile.behance_url && (
                   <a
-                    href={resume_url!}
+                    href={profile.behance_url}
                     target="_blank"
                     rel="noreferrer"
-                    download={resume_name ?? "resume.pdf"}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-blue-500 hover:text-blue-600"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M22 7h-7v-2h7v2zm1.726 10c-.442 1.297-2.029 3-5.101 3-3.074 0-5.513-1.914-5.513-5.861 0-3.786 2.318-5.912 5.445-5.912 3.031 0 4.842 1.768 5.221 4.148.125.799.188 1.​304.188 2.316h-8.365c.138 1.796 1.114 2.83 2.477 2.83.852 0 1.478-.342 1.914-1.02l3.734.499zm-9.449-5.637h5.009c-.065-1.531-.92-2.419-2.395-2.419-1.511 0-2.441.926-2.614 2.419zm-4.289 4.289c-.742.783-1.944 1.171-3.353 1.171h-5.635v-14h5.476c3.154 0 4.923 1.417 4.923 3.934 0 1.397-.493 2.449-1.563 3.207 1.36.547 2.195 1.723 2.195 3.276-.001 1.001-.295 1.853-.043 2.412zm-6.627-8.895v2.936h2.058c1.086 0 1.737-.502 1.737-1.508 0-.949-.617-1.428-1.703-1.428h-2.092zm0 5.287v3.187h2.273c1.275 0 1.965-.541 1.965-1.623 0-1.044-.701-1.564-1.965-1.564h-2.273z" />
+                    </svg>
+                    Behance
+                  </a>
+                )}
+                {profile.website_url && (
+                  <a
+                    href={profile.website_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-900"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    </svg>
+                    Website
+                  </a>
+                )}
+                {profile.resume_link && (
+                  <a
+                    href={profile.resume_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Resume
+                  </a>
+                )}
+                {profile.resume_url && (
+                  <a
+                    href={profile.resume_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={profile.resume_name ?? "resume.pdf"}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -306,7 +439,9 @@ export default async function StudentPortfolioPage({ params }: Props) {
               <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
                 Tasks completed
               </p>
-              <p className="mt-1 text-3xl font-bold text-slate-900">{totalCompleted}</p>
+              <p className="mt-1 text-3xl font-bold text-slate-900">
+                {totalCompleted}
+              </p>
             </div>
             {avgScore !== null && (
               <div>
@@ -354,8 +489,16 @@ export default async function StudentPortfolioPage({ params }: Props) {
                 No completed work yet
               </h3>
               <p className="mt-1 text-sm text-slate-400">
-                {firstName} hasn&apos;t had any submissions reviewed yet.
+                {firstName} hasn&apos;t had any submissions approved yet.
               </p>
+              {isOwner && (
+                <Link
+                  href="/tasks"
+                  className="mt-5 inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+                >
+                  Browse Tasks
+                </Link>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -373,7 +516,6 @@ export default async function StudentPortfolioPage({ params }: Props) {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
-                        {/* Badges */}
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                           <MajorBadge major={task.major} />
                           {sectionName && (
@@ -388,20 +530,14 @@ export default async function StudentPortfolioPage({ params }: Props) {
                             </span>
                           )}
                         </div>
-
-                        {/* Task title */}
                         <h3 className="text-base font-semibold text-slate-900">
                           {task.title}
                         </h3>
-
-                        {/* Reviewed date */}
                         {submission.reviewed_at && (
                           <p className="mt-1 text-xs text-slate-400">
                             Reviewed {formatDate(submission.reviewed_at)}
                           </p>
                         )}
-
-                        {/* Feedback snippet */}
                         {submission.admin_feedback && (
                           <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
                             <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-emerald-600">
@@ -413,8 +549,6 @@ export default async function StudentPortfolioPage({ params }: Props) {
                           </div>
                         )}
                       </div>
-
-                      {/* Approved badge */}
                       <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
                         <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
                           <path
@@ -423,7 +557,7 @@ export default async function StudentPortfolioPage({ params }: Props) {
                             clipRule="evenodd"
                           />
                         </svg>
-                        Completed
+                        Approved
                       </span>
                     </div>
                   </div>
@@ -431,24 +565,6 @@ export default async function StudentPortfolioPage({ params }: Props) {
               })}
             </div>
           )}
-        </section>
-
-        {/* Footer CTA */}
-        <section className="mt-10 rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 p-8 text-center">
-          <p className="text-sm font-semibold text-indigo-700">GradFolio</p>
-          <h3 className="mt-2 text-xl font-bold text-slate-900">
-            Build your own portfolio of real work
-          </h3>
-          <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
-            Complete real tasks, get feedback, and create proof of skills that
-            employers can actually see.
-          </p>
-          <Link
-            href="/register"
-            className="mt-5 inline-flex items-center justify-center rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
-          >
-            Get Started Free
-          </Link>
         </section>
 
       </div>

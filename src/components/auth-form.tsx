@@ -138,9 +138,19 @@ export default function AuthForm({ mode }: AuthFormProps) {
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">
-            Password
-          </label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="text-sm font-medium text-slate-700">
+              Password
+            </label>
+            {mode === "login" && (
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                Forgot password?
+              </Link>
+            )}
+          </div>
           <input
             type="password"
             value={password}

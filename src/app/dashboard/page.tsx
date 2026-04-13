@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { uploadResume, removeResume } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,8 @@ import {
 import { Container } from "@/components/ui/container";
 import Link from "next/link";
 import { MAJOR_NAMES } from "@/lib/majors";
+import OnboardingBanner from "@/components/onboarding-banner";
+import { getSectionProgressMap, type SectionProgress } from "@/lib/section-progress";
 
 type JoinedTask = {
   id: string;
@@ -65,6 +68,17 @@ function getStatusClasses(status: string) {
   if (value === "closed")
     return "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
   return "bg-slate-100 text-slate-600";
+}
+
+async function dismissOnboarding() {
+  "use server";
+  const cookieStore = await cookies();
+  cookieStore.set("gf_onboarding_done", "1", {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+    sameSite: "lax",
+    httpOnly: true,
+  });
 }
 
 async function updateMajor(formData: FormData) {
@@ -124,6 +138,22 @@ export default async function DashboardPage({
     : null;
   resumeSuccess = params?.resume_success === "1";
 
+  // Onboarding — fetch optional profile fields to measure completeness
+  let headline: string | null = null;
+  let avatarUrl: string | null = null;
+  try {
+    const { data: extras } = await supabase
+      .from("profiles")
+      .select("headline, avatar_url")
+      .eq("id", user.id)
+      .maybeSingle<{ headline: string | null; avatar_url: string | null }>();
+    headline = extras?.headline ?? null;
+    avatarUrl = extras?.avatar_url ?? null;
+  } catch { /* columns not in DB yet */ }
+
+  const cookieStore = await cookies();
+  const onboardingDismissed = cookieStore.get("gf_onboarding_done")?.value === "1";
+
   const role: string = profile?.role ?? "student";
   const isAdmin = role === "admin";
   const isManager = role === "manager";
@@ -163,6 +193,7 @@ export default async function DashboardPage({
 
   // Sections for student view
   let sections: SectionSummary[] = [];
+  let sectionProgressMap: Record<string, SectionProgress> = {};
   if (!isStaff && userMajor) {
     const { data: sectionData } = await supabase
       .from("sections")
@@ -176,6 +207,14 @@ export default async function DashboardPage({
       major: s.major,
       task_count: s.tasks?.[0]?.count ?? 0,
     }));
+
+    if (sections.length > 0) {
+      sectionProgressMap = await getSectionProgressMap(
+        supabase,
+        user.id,
+        sections.map((s) => s.id)
+      );
+    }
   }
 
   // Upcoming deadlines for students — tasks in their major with due_date within 14 days
@@ -234,6 +273,20 @@ export default async function DashboardPage({
   return (
     <main className="min-h-screen pb-20 pt-10">
       <Container className="space-y-6">
+
+        {/* Onboarding banner — students only, hidden once dismissed or fully complete */}
+        {!isStaff && !onboardingDismissed && (
+          <OnboardingBanner
+            profileUrl={`/students/${user.id}/edit`}
+            steps={[
+              { label: "Name set", done: !!profile?.full_name?.trim() },
+              { label: "Major chosen", done: !!userMajor },
+              { label: "Headline added", done: !!headline?.trim() },
+              { label: "Photo uploaded", done: !!avatarUrl },
+            ]}
+            dismiss={dismissOnboarding}
+          />
+        )}
 
         {/* Welcome header */}
         <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm md:p-10">
@@ -392,6 +445,9 @@ export default async function DashboardPage({
                   {pendingReviews > 0
                     ? `Review Submissions (${pendingReviews})`
                     : "Review Submissions"}
+                </Button>
+                <Button href="/admin/students" variant="secondary">
+                  Students
                 </Button>
                 {isAdmin && (
                   <Button href="/admin/managers" variant="secondary">
@@ -608,27 +664,58 @@ export default async function DashboardPage({
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {sections.map((section) => (
-                      <Link
-                        key={section.id}
-                        href={`/tasks/sections/${section.id}`}
-                        className="group flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 transition-all duration-150 hover:border-indigo-200 hover:bg-white hover:shadow-sm"
-                      >
-                        <h4 className="text-sm font-semibold text-slate-900 group-hover:text-indigo-700 transition-colors leading-snug">
-                          {section.name}
-                        </h4>
-                        <div className="flex items-center justify-between mt-auto pt-1">
-                          <span className="text-xs text-slate-400">
-                            {section.task_count === 0
-                              ? "No tasks yet"
-                              : `${section.task_count} task${section.task_count !== 1 ? "s" : ""}`}
-                          </span>
-                          <span className="text-xs text-indigo-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                            Open →
-                          </span>
-                        </div>
-                      </Link>
-                    ))}
+                    {sections.map((section) => {
+                      const prog = sectionProgressMap[section.id];
+                      const hasProg = prog && prog.total > 0;
+                      const pct = hasProg ? Math.round((prog.done / prog.total) * 100) : 0;
+                      const allDone = hasProg && prog.done === prog.total;
+                      return (
+                        <Link
+                          key={section.id}
+                          href={`/tasks/sections/${section.id}`}
+                          className={`group flex flex-col gap-2 rounded-2xl border p-4 transition-all duration-150 hover:shadow-sm ${
+                            allDone
+                              ? "border-emerald-100 bg-emerald-50/40 hover:border-emerald-200"
+                              : "border-slate-100 bg-slate-50 hover:border-indigo-200 hover:bg-white"
+                          }`}
+                        >
+                          <h4 className={`text-sm font-semibold leading-snug transition-colors ${
+                            allDone
+                              ? "text-emerald-800 group-hover:text-emerald-700"
+                              : "text-slate-900 group-hover:text-indigo-700"
+                          }`}>
+                            {section.name}
+                          </h4>
+
+                          {/* Progress bar */}
+                          {hasProg && (
+                            <div className="space-y-1">
+                              <div className="h-1.5 w-full rounded-full bg-white/80 overflow-hidden border border-slate-200/60">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${allDone ? "bg-emerald-500" : "bg-indigo-400"}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between mt-auto pt-0.5">
+                            <span className={`text-xs font-medium ${allDone ? "text-emerald-600" : "text-slate-400"}`}>
+                              {section.task_count === 0
+                                ? "No tasks yet"
+                                : hasProg
+                                ? allDone
+                                  ? `✓ All ${prog.total} done`
+                                  : `${prog.done} / ${prog.total} submitted`
+                                : `${section.task_count} task${section.task_count !== 1 ? "s" : ""}`}
+                            </span>
+                            <span className="text-xs text-indigo-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                              Open →
+                            </span>
+                          </div>
+                        </Link>
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

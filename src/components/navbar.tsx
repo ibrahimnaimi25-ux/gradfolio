@@ -36,6 +36,7 @@ export default async function Navbar() {
     { href: "/admin/tasks", label: "Tasks" },
     { href: "/admin/sections", label: "Sections" },
     { href: "/admin/submissions", label: "Submissions" },
+    { href: "/admin/students", label: "Students" },
   ];
 
   // Super admin gets manager management on top

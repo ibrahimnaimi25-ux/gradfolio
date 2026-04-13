@@ -30,9 +30,10 @@ export default async function Navbar() {
     { href: "/dashboard", label: "Dashboard" },
   ];
 
-  // Shared staff links (admin + manager)
+  // Staff nav is completely separate — no student links mixed in
   const staffBaseLinks = [
-    ...studentLinks,
+    { href: "/", label: "Home" },
+    { href: "/dashboard", label: "Dashboard" },
     { href: "/admin/tasks", label: "Tasks" },
     { href: "/admin/sections", label: "Sections" },
     { href: "/admin/submissions", label: "Submissions" },

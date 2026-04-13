@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MAJOR_NAMES } from "@/lib/majors";
 import { saveProfile } from "@/app/students/[id]/actions";
 import AvatarForm from "./avatar-form";
+import SubmitButton from "@/components/submit-button";
 import type { Metadata } from "next";
 
 interface Props {
@@ -317,12 +318,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
 
           {/* Save + Cancel buttons */}
           <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              className="rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-            >
-              Save Profile
-            </button>
+            <SubmitButton label="Save Profile" loadingLabel="Saving…" />
             <a
               href={`/students/${id}`}
               className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-300"

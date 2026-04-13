@@ -17,6 +17,7 @@ import { requireStaff, getMajorFilter } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendReviewedEmail } from "@/lib/email";
+import SubmitButton from "@/components/submit-button";
 import {
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_CLASSES,
@@ -666,12 +667,11 @@ export default async function AdminSubmissionsPage({
                           </p>
                         )}
                         <div className={effectiveStatus !== "pending" ? "" : "w-full sm:w-auto"}>
-                          <button
-                            type="submit"
-                            className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
-                          >
-                            Save Review
-                          </button>
+                          <SubmitButton
+                            label="Save Review"
+                            loadingLabel="Saving…"
+                            className="w-full sm:w-auto"
+                          />
                         </div>
                       </div>
                     </form>

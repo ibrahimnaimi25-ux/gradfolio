@@ -15,6 +15,7 @@ import Link from "next/link";
 import { MAJOR_NAMES } from "@/lib/majors";
 import OnboardingBanner from "@/components/onboarding-banner";
 import { getSectionProgressMap, type SectionProgress } from "@/lib/section-progress";
+import SubmitButton from "@/components/submit-button";
 
 type JoinedTask = {
   id: string;
@@ -477,12 +478,7 @@ export default async function DashboardPage({
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium !text-white transition hover:bg-slate-700"
-                  >
-                    Save Major
-                  </button>
+                  <SubmitButton label="Save Major" loadingLabel="Saving…" />
                 </form>
               </CardContent>
             </Card>

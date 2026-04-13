@@ -15,6 +15,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireStaff, getMajorFilter } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendReviewedEmail } from "@/lib/email";
 import {
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_CLASSES,
@@ -152,12 +154,60 @@ async function reviewSubmission(formData: FormData) {
   if (score && score >= 1 && score <= 5) updatePayload.score = score;
   else updatePayload.score = null;
 
+  // Fetch submission (user_id + task_id) before updating so we can email the student
+  const { data: submissionForEmail } = await supabase
+    .from("submissions")
+    .select("user_id, task_id")
+    .eq("id", submissionId)
+    .maybeSingle<{ user_id: string; task_id: string }>();
+
   const { error } = await supabase
     .from("submissions")
     .update(updatePayload)
     .eq("id", submissionId);
 
   if (error) redirect(`/admin/submissions?error=${encodeURIComponent(error.message)}`);
+
+  // Send "submission reviewed" email — best-effort, never blocks the review
+  if (submissionForEmail) {
+    try {
+      const admin = createAdminClient();
+
+      const [{ data: userData }, { data: taskData }, { data: profileData }] =
+        await Promise.all([
+          admin.auth.admin.getUserById(submissionForEmail.user_id),
+          supabase
+            .from("tasks")
+            .select("title")
+            .eq("id", submissionForEmail.task_id)
+            .maybeSingle<{ title: string }>(),
+          supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", submissionForEmail.user_id)
+            .maybeSingle<{ full_name: string | null }>(),
+        ]);
+
+      const toEmail = userData?.user?.email;
+      const taskTitle = taskData?.title ?? "your task";
+      const studentName = profileData?.full_name ?? "there";
+
+      if (toEmail) {
+        await sendReviewedEmail({
+          toEmail,
+          studentName,
+          taskTitle,
+          taskId: submissionForEmail.task_id,
+          reviewStatus,
+          score: score && score >= 1 && score <= 5 ? score : null,
+          feedback: feedback || null,
+        });
+      }
+    } catch (emailErr) {
+      console.error("[email] review notification failed:", emailErr);
+    }
+  }
+
   revalidatePath("/admin/submissions");
   revalidatePath("/admin/tasks");
   revalidatePath("/dashboard");

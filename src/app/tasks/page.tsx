@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { SectionWithTaskCount } from "@/types/sections";
+import { getSectionProgressMap, type SectionProgress } from "@/lib/section-progress";
 
 export const metadata = { title: "Tasks | GradFolio" };
 
@@ -116,6 +117,16 @@ export default async function TasksPage({
 
   const majors = Object.keys(byMajor).sort();
   const totalTasks = sections.reduce((a, s) => a + s.task_count, 0);
+
+  // Progress map — students only (admins have no personal progress to show)
+  let progressMap: Record<string, SectionProgress> = {};
+  if (!isAdmin && sections.length > 0) {
+    progressMap = await getSectionProgressMap(
+      supabase,
+      user.id,
+      sections.map((s) => s.id)
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -247,49 +258,72 @@ export default async function TasksPage({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {majorSections.map((section) => (
-                    <Link
-                      key={section.id}
-                      href={`/tasks/sections/${section.id}`}
-                      className={`group bg-white border-2 ${style.border} ${style.hoverBorder} rounded-2xl p-5 flex flex-col gap-3 hover:shadow-md transition-all duration-200`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <span
-                          className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${style.tag}`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-                          {section.major}
-                        </span>
-                        <span className="text-xs text-slate-400">
-                          {new Date(section.created_at).toLocaleDateString("en-US", {
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </span>
-                      </div>
+                  {majorSections.map((section) => {
+                    const prog = progressMap[section.id];
+                    const hasProg = !isAdmin && prog && prog.total > 0;
+                    const pct = hasProg ? Math.round((prog.done / prog.total) * 100) : 0;
+                    const allDone = hasProg && prog.done === prog.total;
 
-                      <h3 className={`font-semibold text-slate-900 text-base leading-snug transition-colors ${style.accent}`}>
-                        {section.name}
-                      </h3>
+                    return (
+                      <Link
+                        key={section.id}
+                        href={`/tasks/sections/${section.id}`}
+                        className={`group bg-white border-2 ${style.border} ${style.hoverBorder} rounded-2xl p-5 flex flex-col gap-3 hover:shadow-md transition-all duration-200`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <span
+                            className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${style.tag}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                            {section.major}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            {new Date(section.created_at).toLocaleDateString("en-US", {
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </span>
+                        </div>
 
-                      {section.description && (
-                        <p className="text-sm text-slate-500 line-clamp-2 flex-1">
-                          {section.description}
-                        </p>
-                      )}
+                        <h3 className={`font-semibold text-slate-900 text-base leading-snug transition-colors ${style.accent}`}>
+                          {section.name}
+                        </h3>
 
-                      <div className="flex items-center justify-between pt-3 mt-auto border-t border-slate-100">
-                        <span className="text-xs font-medium text-slate-500">
-                          {section.task_count === 0
-                            ? "No tasks yet"
-                            : `${section.task_count} task${section.task_count !== 1 ? "s" : ""}`}
-                        </span>
-                        <span className={`text-xs font-semibold opacity-0 group-hover:opacity-100 transition-all duration-200 ${style.arrow}`}>
-                          View →
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
+                        {section.description && (
+                          <p className="text-sm text-slate-500 line-clamp-2 flex-1">
+                            {section.description}
+                          </p>
+                        )}
+
+                        {/* Progress bar — students with tasks only */}
+                        {hasProg && (
+                          <div className="space-y-1.5 pt-1">
+                            <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${allDone ? "bg-emerald-500" : style.dot}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 mt-auto border-t border-slate-100">
+                          <span className="text-xs font-medium text-slate-500">
+                            {section.task_count === 0
+                              ? "No tasks yet"
+                              : hasProg
+                              ? allDone
+                                ? `✓ All ${prog.total} done`
+                                : `${prog.done} / ${prog.total} submitted`
+                              : `${section.task_count} task${section.task_count !== 1 ? "s" : ""}`}
+                          </span>
+                          <span className={`text-xs font-semibold opacity-0 group-hover:opacity-100 transition-all duration-200 ${style.arrow}`}>
+                            View →
+                          </span>
+                        </div>
+                      </Link>
+                    );
+                  })}
                 </div>
               </section>
             );

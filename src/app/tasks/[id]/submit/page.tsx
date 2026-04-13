@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import SubmitButton from "@/components/submit-button";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -413,10 +414,10 @@ export default async function SubmitTaskPage({ params, searchParams }: PageProps
             )}
 
             <div className="pt-2">
-              <button type="submit"
-                className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-6 py-3 text-sm font-medium !text-white transition hover:bg-slate-700">
-                {existingSubmission ? "Update Submission" : "Submit Work"}
-              </button>
+              <SubmitButton
+                label={existingSubmission ? "Update Submission" : "Submit Work"}
+                loadingLabel={existingSubmission ? "Updating…" : "Submitting…"}
+              />
             </div>
           </form>
         </section>

@@ -19,11 +19,12 @@ export async function getSectionProgressMap(
 ): Promise<Record<string, SectionProgress>> {
   if (sectionIds.length === 0) return {};
 
-  // Query 1 — all tasks that belong to these sections
+  // Query 1 — only OPEN tasks (draft + closed don't count toward progress)
   const { data: tasks } = await supabase
     .from("tasks")
     .select("id, section_id")
     .in("section_id", sectionIds)
+    .eq("status", "open")
     .returns<Array<{ id: string; section_id: string }>>();
 
   const taskList = tasks ?? [];

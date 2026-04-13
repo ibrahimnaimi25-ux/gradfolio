@@ -170,6 +170,8 @@ export default async function SectionDetailPage({ params }: Props) {
   }
 
   // ─── Section progress counts (students only) ─────────────────────────────────
+  // Denominator is open tasks only — draft/closed tasks cannot be submitted to
+  const openTaskCount = taskList.filter((t: any) => t.status === "open").length;
   const completedCount = Object.values(progressMap).filter((v) => v === "reviewed").length;
   const submittedCount = Object.values(progressMap).filter((v) => v === "submitted").length;
   const doneCount = completedCount + submittedCount;
@@ -214,19 +216,19 @@ export default async function SectionDetailPage({ params }: Props) {
               </p>
             </div>
 
-            {/* Progress bar — logged-in students only */}
-            {!isStaff && taskList.length > 0 && (
+            {/* Progress bar — logged-in students only, open tasks denominator */}
+            {!isStaff && openTaskCount > 0 && (
               <div className="flex-1 min-w-[160px]">
                 <div className="flex items-center justify-between mb-1.5">
                   <p className="text-xs text-slate-400 uppercase tracking-wider">Your progress</p>
                   <p className="text-xs font-semibold text-slate-600">
-                    {doneCount} / {taskList.length}
+                    {doneCount} / {openTaskCount}
                   </p>
                 </div>
                 <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
                   <div
-                    className="h-2 rounded-full bg-indigo-500 transition-all duration-500"
-                    style={{ width: `${taskList.length > 0 ? (doneCount / taskList.length) * 100 : 0}%` }}
+                    className={`h-2 rounded-full transition-all duration-500 ${doneCount === openTaskCount ? "bg-emerald-500" : "bg-indigo-500"}`}
+                    style={{ width: `${(doneCount / openTaskCount) * 100}%` }}
                   />
                 </div>
                 {doneCount > 0 && (

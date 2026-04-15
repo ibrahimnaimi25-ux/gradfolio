@@ -48,16 +48,17 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
   let resume_url: string | null = null;
   let resume_name: string | null = null;
   let avatar_url: string | null = null;
+  let is_public = false;
   try {
     const { data: extras } = await supabase
       .from("profiles")
-      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url")
+      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url, is_public")
       .eq("id", id)
       .maybeSingle<{
         bio: string | null; headline: string | null; skills: string | null;
         linkedin_url: string | null; github_url: string | null; behance_url: string | null;
         website_url: string | null; resume_link: string | null; resume_url: string | null;
-        resume_name: string | null; avatar_url: string | null;
+        resume_name: string | null; avatar_url: string | null; is_public: boolean | null;
       }>();
     bio = extras?.bio ?? null;
     headline = extras?.headline ?? null;
@@ -70,6 +71,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
     resume_url = extras?.resume_url ?? null;
     resume_name = extras?.resume_name ?? null;
     avatar_url = extras?.avatar_url ?? null;
+    is_public = extras?.is_public ?? false;
   } catch {
     // columns not yet migrated — degrade gracefully
   }
@@ -78,7 +80,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
     full_name: baseProfile?.full_name ?? null,
     major: baseProfile?.major ?? null,
     bio, headline, skills, linkedin_url, github_url, behance_url,
-    website_url, resume_link, resume_url, resume_name, avatar_url,
+    website_url, resume_link, resume_url, resume_name, avatar_url, is_public,
   };
 
   return (
@@ -91,7 +93,9 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
             Edit Profile
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Your portfolio is visible to managers and admins.
+            {p.is_public
+              ? "Your portfolio is public — anyone with the link can view it."
+              : "Your portfolio is private — only managers and admins can view it."}
           </p>
         </div>
 
@@ -308,6 +312,43 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
               </div>
             </section>
           )}
+
+          {/* Portfolio visibility */}
+          <section className="mb-6 rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-slate-400">
+              Portfolio Visibility
+            </h2>
+            <p className="mb-4 text-xs text-slate-400">
+              Public portfolios appear in the{" "}
+              <a href="/talent" className="text-indigo-600 hover:underline">Talent Directory</a>{" "}
+              and can be viewed by anyone with the link — including employers.
+            </p>
+
+            {/* Hidden input for unchecked state */}
+            <input type="hidden" name="is_public" value="0" />
+
+            <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-white transition">
+              <div className="relative mt-0.5 shrink-0">
+                <input
+                  type="checkbox"
+                  name="is_public"
+                  value="1"
+                  defaultChecked={p.is_public}
+                  className="peer sr-only"
+                />
+                <div className="h-5 w-9 rounded-full bg-slate-200 transition peer-checked:bg-indigo-500" />
+                <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Make my portfolio public
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Employers and visitors can discover and view your approved work.
+                </p>
+              </div>
+            </label>
+          </section>
 
           {/* Save + Cancel buttons */}
           <div className="flex items-center gap-3">

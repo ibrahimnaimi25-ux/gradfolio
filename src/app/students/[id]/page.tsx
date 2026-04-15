@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { headers } from "next/headers";
+import ShareButton from "@/components/share-button";
 import type { Metadata } from "next";
 
 interface Props {
@@ -24,6 +26,7 @@ type Profile = {
   resume_url: string | null;
   resume_name: string | null;
   avatar_url: string | null;
+  is_public: boolean;
 };
 
 type SubmissionWithTask = {
@@ -42,8 +45,27 @@ type SubmissionWithTask = {
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  // Portfolios are private — never expose student details to crawlers
-  void params; // params unused; title is intentionally generic
+  const { id } = await params;
+  const supabase = await createClient();
+
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("full_name, headline, is_public")
+      .eq("id", id)
+      .maybeSingle<{ full_name: string | null; headline: string | null; is_public: boolean | null }>();
+
+    if (data?.is_public) {
+      return {
+        title: data.full_name
+          ? `${data.full_name} | GradFolio Portfolio`
+          : "Portfolio | GradFolio",
+        description: data.headline ?? `Student portfolio on GradFolio`,
+        robots: { index: true, follow: true },
+      };
+    }
+  } catch { /* ignore */ }
+
   return {
     title: "Portfolio | GradFolio",
     robots: { index: false, follow: false },
@@ -121,25 +143,7 @@ export default async function StudentPortfolioPage({
 
   const supabase = await createClient();
 
-  // Auth required — guests go to login
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect(`/login?next=/students/${id}`);
-
-  // Fetch viewer's role for access control
-  const { data: viewerProfile } = await supabase
-    .from("profiles")
-    .select("role, assigned_major")
-    .eq("id", user.id)
-    .maybeSingle<{ role: string; assigned_major: string | null }>();
-
-  const viewerRole = viewerProfile?.role ?? "student";
-  const isAdmin = viewerRole === "admin";
-  const isManager = viewerRole === "manager";
-  const isOwner = user.id === id;
-
-  // Fetch guaranteed-existing columns only
+  // Fetch guaranteed-existing columns first (before auth check)
   const { data: baseProfile } = await supabase
     .from("profiles")
     .select("id, full_name, major, role")
@@ -149,23 +153,59 @@ export default async function StudentPortfolioPage({
   // Only students have portfolios
   if (!baseProfile || baseProfile.role !== "student") notFound();
 
+  // Check is_public before requiring auth
+  let isPublicProfile = false;
+  try {
+    const { data: vis } = await supabase
+      .from("profiles")
+      .select("is_public")
+      .eq("id", id)
+      .maybeSingle<{ is_public: boolean | null }>();
+    isPublicProfile = vis?.is_public ?? false;
+  } catch { /* column may not exist yet */ }
+
+  // Auth check — public portfolios skip login requirement
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user && !isPublicProfile) {
+    redirect(`/login?next=/students/${id}`);
+  }
+
+  // Viewer identity
+  let viewerRole = "guest";
+  let viewerAssignedMajor: string | null = null;
+  if (user) {
+    const { data: viewerProfile } = await supabase
+      .from("profiles")
+      .select("role, assigned_major")
+      .eq("id", user.id)
+      .maybeSingle<{ role: string; assigned_major: string | null }>();
+    viewerRole = viewerProfile?.role ?? "student";
+    viewerAssignedMajor = viewerProfile?.assigned_major ?? null;
+  }
+
+  const isAdmin = viewerRole === "admin";
+  const isManager = viewerRole === "manager";
+  const isOwner = user?.id === id;
+
   // ── Access control ─────────────────────────────────────────────────────────
-  // Enforce BEFORE fetching any further profile data.
-  // Allowed: portfolio owner · admin · manager scoped to the student's major.
-  // Denied (→ /dashboard): any other authenticated user, including students
-  //   viewing a peer, managers outside their scope, and users with no profile row.
-  if (!isOwner && !isAdmin) {
-    if (!isManager) {
-      redirect("/dashboard");
-    }
-    if (
-      !viewerProfile?.assigned_major ||
-      baseProfile.major !== viewerProfile.assigned_major
-    ) {
+  // Public portfolio: accessible to everyone (guests included)
+  // Private portfolio: owner · admin · manager scoped to student's major only
+  if (!isPublicProfile && !isOwner && !isAdmin) {
+    if (!isManager) redirect("/dashboard");
+    if (!viewerAssignedMajor || baseProfile.major !== viewerAssignedMajor) {
       redirect("/dashboard");
     }
   }
   // ──────────────────────────────────────────────────────────────────────────
+
+  // Build public URL for share button
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "localhost:3000";
+  const protocol = host.startsWith("localhost") ? "http" : "https";
+  const portfolioUrl = `${protocol}://${host}/students/${id}`;
 
   // Fetch all optional columns in one try/catch — degrades gracefully before migration
   let bio: string | null = null;
@@ -184,7 +224,7 @@ export default async function StudentPortfolioPage({
       .from("profiles")
       .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url")
       .eq("id", id)
-      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role">>();
+      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role" | "is_public">>();
     bio = extras?.bio ?? null;
     headline = extras?.headline ?? null;
     skills = extras?.skills ?? null;
@@ -200,7 +240,12 @@ export default async function StudentPortfolioPage({
     // columns not yet migrated — show profile without them
   }
 
-  const profile: Profile = { ...baseProfile, bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url };
+  const profile: Profile = {
+    ...baseProfile,
+    bio, headline, skills, linkedin_url, github_url, behance_url,
+    website_url, resume_link, resume_url, resume_name, avatar_url,
+    is_public: isPublicProfile,
+  };
 
 
   // Submissions (approved only for public portfolio display)
@@ -300,28 +345,48 @@ export default async function StudentPortfolioPage({
                   )}
                 </div>
 
-                {/* Edit button (owner only) */}
-                {isOwner && (
-                  <Link
-                    href={`/students/${id}/edit`}
-                    className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
+                {/* Action buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Public/private badge */}
+                  {isOwner && (
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      profile.is_public
+                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                        : "bg-slate-100 text-slate-500"
+                    }`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${profile.is_public ? "bg-emerald-500" : "bg-slate-400"}`} />
+                      {profile.is_public ? "Public" : "Private"}
+                    </span>
+                  )}
+
+                  {/* Share button — shown when public */}
+                  {profile.is_public && (
+                    <ShareButton url={portfolioUrl} />
+                  )}
+
+                  {/* Edit button (owner only) */}
+                  {isOwner && (
+                    <Link
+                      href={`/students/${id}/edit`}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                    Edit Profile
-                  </Link>
-                )}
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                      Edit Profile
+                    </Link>
+                  )}
+                </div>
               </div>
 
               {/* Bio */}

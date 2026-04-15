@@ -28,6 +28,7 @@ export default async function Navbar() {
     { href: "/", label: "Home" },
     { href: "/tasks", label: "Tasks" },
     { href: "/submissions", label: "My Work" },
+    { href: "/talent", label: "Talent" },
     { href: "/dashboard", label: "Dashboard" },
   ];
 
@@ -51,6 +52,7 @@ export default async function Navbar() {
 
   const guestLinks = [
     { href: "/", label: "Home" },
+    { href: "/talent", label: "Talent" },
   ];
 
   const links = !user

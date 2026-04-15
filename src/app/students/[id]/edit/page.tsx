@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { MAJOR_NAMES } from "@/lib/majors";
+import { getMajorNames } from "@/lib/majors-db";
 import { saveProfile } from "@/app/students/[id]/actions";
 import AvatarForm from "./avatar-form";
 import SubmitButton from "@/components/submit-button";
+import TagInput from "@/components/tag-input";
 import type { Metadata } from "next";
 
 interface Props {
@@ -20,6 +21,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
   const { error, photo } = await searchParams;
 
   const supabase = await createClient();
+  const majorNames = await getMajorNames(supabase);
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -46,16 +48,17 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
   let resume_url: string | null = null;
   let resume_name: string | null = null;
   let avatar_url: string | null = null;
+  let open_to_opportunities = false;
   try {
     const { data: extras } = await supabase
       .from("profiles")
-      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url")
+      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url, open_to_opportunities")
       .eq("id", id)
       .maybeSingle<{
         bio: string | null; headline: string | null; skills: string | null;
         linkedin_url: string | null; github_url: string | null; behance_url: string | null;
         website_url: string | null; resume_link: string | null; resume_url: string | null;
-        resume_name: string | null; avatar_url: string | null;
+        resume_name: string | null; avatar_url: string | null; open_to_opportunities: boolean | null;
       }>();
     bio = extras?.bio ?? null;
     headline = extras?.headline ?? null;
@@ -68,6 +71,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
     resume_url = extras?.resume_url ?? null;
     resume_name = extras?.resume_name ?? null;
     avatar_url = extras?.avatar_url ?? null;
+    open_to_opportunities = extras?.open_to_opportunities ?? false;
   } catch {
     // columns not yet migrated — degrade gracefully
   }
@@ -76,7 +80,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
     full_name: baseProfile?.full_name ?? null,
     major: baseProfile?.major ?? null,
     bio, headline, skills, linkedin_url, github_url, behance_url,
-    website_url, resume_link, resume_url, resume_name, avatar_url,
+    website_url, resume_link, resume_url, resume_name, avatar_url, open_to_opportunities,
   };
 
   return (
@@ -89,7 +93,9 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
             Edit Profile
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Your portfolio is visible to managers and admins.
+            {p.open_to_opportunities
+              ? "You're open to opportunities — companies can discover and view your portfolio."
+              : "Your portfolio is private — only managers and admins can view it."}
           </p>
         </div>
 
@@ -175,7 +181,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="">— select major —</option>
-                  {MAJOR_NAMES.map((m) => (
+                  {majorNames.map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>
@@ -201,22 +207,13 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
               </div>
 
               <div>
-                <label
-                  htmlFor="skills"
-                  className="mb-1.5 block text-sm font-medium text-slate-700"
-                >
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Skills
-                  <span className="ml-1.5 text-xs text-slate-400">
-                    (comma-separated)
-                  </span>
                 </label>
-                <input
-                  id="skills"
+                <TagInput
                   name="skills"
-                  type="text"
-                  defaultValue={p.skills ?? ""}
-                  placeholder="Python, Threat Analysis, SIEM, Report Writing"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 transition focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  initialValue={p.skills}
+                  placeholder="Type a skill and press Enter…"
                 />
               </div>
             </div>
@@ -315,6 +312,44 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
               </div>
             </section>
           )}
+
+          {/* Opportunities visibility */}
+          <section className="mb-6 rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-slate-400">
+              Open to Opportunities
+            </h2>
+            <p className="mb-4 text-xs text-slate-400">
+              When enabled, companies registered on GradFolio can discover your profile
+              in the{" "}
+              <a href="/discover" className="text-indigo-600 hover:underline">talent directory</a>{" "}
+              and express interest in you. Your work is never exposed to the public internet.
+            </p>
+
+            {/* Hidden input for unchecked state */}
+            <input type="hidden" name="open_to_opportunities" value="0" />
+
+            <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-white transition">
+              <div className="relative mt-0.5 shrink-0">
+                <input
+                  type="checkbox"
+                  name="open_to_opportunities"
+                  value="1"
+                  defaultChecked={p.open_to_opportunities}
+                  className="peer sr-only"
+                />
+                <div className="h-5 w-9 rounded-full bg-slate-200 transition peer-checked:bg-emerald-500" />
+                <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  I&apos;m open to opportunities
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Companies on the platform can find you and express interest. Only registered companies can see your profile.
+                </p>
+              </div>
+            </label>
+          </section>
 
           {/* Save + Cancel buttons */}
           <div className="flex items-center gap-3">

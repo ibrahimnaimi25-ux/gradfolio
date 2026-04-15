@@ -53,3 +53,38 @@ export function getMajorFilter(profile: StaffProfile): string | null {
   if (profile.role === "manager") return profile.assigned_major ?? "";
   return null;
 }
+
+export type CompanyProfile = {
+  id: string;
+  full_name: string | null;
+  role: AppRole;
+  company_name: string | null;
+  industry: string | null;
+  company_website: string | null;
+  company_size: string | null;
+  company_description: string | null;
+};
+
+/**
+ * Require a company account.
+ * Redirects non-company users to /dashboard and guests to /login.
+ */
+export async function requireCompany() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, full_name, role, company_name, industry, company_website, company_size, company_description")
+    .eq("id", user.id)
+    .maybeSingle<CompanyProfile>();
+
+  if (!profile || profile.role !== "company") {
+    redirect("/dashboard");
+  }
+
+  return { supabase, user, profile };
+}

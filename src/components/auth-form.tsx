@@ -8,17 +8,21 @@ import { MAJOR_NAMES } from "@/lib/majors";
 
 type AuthFormProps = {
   mode: "login" | "register";
+  /** Major names fetched from DB by the server page. Falls back to static list. */
+  majors?: string[];
 };
 
 const inputClass =
   "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 placeholder:text-slate-400";
 
-export default function AuthForm({ mode }: AuthFormProps) {
+export default function AuthForm({ mode, majors }: AuthFormProps) {
   const supabase = createClient();
   const router = useRouter();
 
+  const availableMajors = majors && majors.length > 0 ? majors : MAJOR_NAMES;
+
   const [fullName, setFullName] = useState("");
-  const [major, setMajor] = useState(MAJOR_NAMES[0]);
+  const [major, setMajor] = useState(availableMajors[0] ?? "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -113,7 +117,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 onChange={(e) => setMajor(e.target.value)}
                 className={inputClass}
               >
-                {MAJOR_NAMES.map((name) => (
+                {availableMajors.map((name) => (
                   <option key={name} value={name}>
                     {name}
                   </option>

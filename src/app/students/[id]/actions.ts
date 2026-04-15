@@ -30,15 +30,17 @@ export async function saveProfile(formData: FormData) {
   }
 
   // Step 2 — optional columns; skip gracefully if column doesn't exist yet
-  const optionalFields: Record<string, string | null> = {
-    bio:          str("bio"),
-    headline:     str("headline"),
-    skills:       str("skills"),
-    linkedin_url: str("linkedin_url"),
-    github_url:   str("github_url"),
-    behance_url:  str("behance_url"),
-    website_url:  str("website_url"),
-    resume_link:  str("resume_link"),
+  const openToOpportunities = formData.get("open_to_opportunities") === "1";
+  const optionalFields: Record<string, string | null | boolean> = {
+    bio:                   str("bio"),
+    headline:              str("headline"),
+    skills:                str("skills"),
+    linkedin_url:          str("linkedin_url"),
+    github_url:            str("github_url"),
+    behance_url:           str("behance_url"),
+    website_url:           str("website_url"),
+    resume_link:           str("resume_link"),
+    open_to_opportunities: openToOpportunities,
   };
 
   // Try all optional fields together first (fast path after migration)

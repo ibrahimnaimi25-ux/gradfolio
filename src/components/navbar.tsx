@@ -3,6 +3,7 @@ import { Container } from "@/components/ui/container";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { NavLinks } from "@/components/navbar-links";
+import { NavbarMobile } from "@/components/navbar-mobile";
 
 export default async function Navbar() {
   const supabase = await createClient();
@@ -22,6 +23,7 @@ export default async function Navbar() {
 
   const isAdmin = role === "admin";
   const isManager = role === "manager";
+  const isCompany = role === "company";
 
   const studentLinks = [
     { href: "/", label: "Home" },
@@ -34,16 +36,24 @@ export default async function Navbar() {
   const staffBaseLinks = [
     { href: "/", label: "Home" },
     { href: "/dashboard", label: "Dashboard" },
+    { href: "/admin/overview", label: "Overview" },
     { href: "/admin/tasks", label: "Tasks" },
     { href: "/admin/sections", label: "Sections" },
     { href: "/admin/submissions", label: "Submissions" },
     { href: "/admin/students", label: "Students" },
   ];
 
-  // Super admin gets manager management on top
+  // Super admin gets manager management + majors on top
   const adminLinks = [
     ...staffBaseLinks,
     { href: "/admin/managers", label: "Managers" },
+    { href: "/admin/majors", label: "Majors" },
+  ];
+
+  const companyLinks = [
+    { href: "/", label: "Home" },
+    { href: "/company/setup", label: "Dashboard" },
+    { href: "/discover", label: "Discover Talent" },
   ];
 
   const guestLinks = [
@@ -56,18 +66,24 @@ export default async function Navbar() {
     ? adminLinks
     : isManager
     ? staffBaseLinks
+    : isCompany
+    ? companyLinks
     : studentLinks;
 
   const roleBadge = isAdmin
     ? "Super Admin"
     : isManager
     ? "Manager"
+    : isCompany
+    ? "Company"
     : "Student";
 
   const roleBadgeClass = isAdmin
     ? "bg-violet-100 text-violet-700"
     : isManager
     ? "bg-sky-100 text-sky-700"
+    : isCompany
+    ? "bg-indigo-100 text-indigo-700"
     : "bg-slate-100 text-slate-600";
 
   return (
@@ -101,7 +117,7 @@ export default async function Navbar() {
               >
                 {roleBadge}
               </span>
-              <form action="/auth/signout" method="POST">
+              <form action="/auth/signout" method="POST" className="hidden md:block">
                 <button
                   type="submit"
                   className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900"
@@ -118,11 +134,19 @@ export default async function Navbar() {
               >
                 Login
               </Link>
-              <Button href="/register" className="px-4 py-2 text-sm">
+              <Button href="/register" className="hidden md:inline-flex px-4 py-2 text-sm">
                 Get Started
               </Button>
             </>
           )}
+
+          {/* Mobile hamburger — client component handles open/close state */}
+          <NavbarMobile
+            links={links}
+            roleBadge={roleBadge}
+            roleBadgeClass={roleBadgeClass}
+            isLoggedIn={!!user}
+          />
         </div>
       </Container>
     </header>

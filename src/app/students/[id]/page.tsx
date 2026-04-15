@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
 
 interface Props {
@@ -24,6 +25,7 @@ type Profile = {
   resume_url: string | null;
   resume_name: string | null;
   avatar_url: string | null;
+  open_to_opportunities: boolean;
 };
 
 type SubmissionWithTask = {
@@ -42,8 +44,7 @@ type SubmissionWithTask = {
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  // Portfolios are private — never expose student details to crawlers
-  void params; // params unused; title is intentionally generic
+  void params;
   return {
     title: "Portfolio | GradFolio",
     robots: { index: false, follow: false },
@@ -112,22 +113,66 @@ function MajorBadge({ major }: { major: string | null }) {
   );
 }
 
+// ── Server action: company expresses interest in student ──────────────────────
+async function expressInterest(formData: FormData) {
+  "use server";
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const studentId = formData.get("student_id")?.toString() ?? "";
+  const message = formData.get("message")?.toString().trim() || null;
+
+  // Upsert so double-click doesn't create duplicates
+  await supabase.from("connections").upsert(
+    { company_user_id: user.id, student_id: studentId, message, status: "interested" },
+    { onConflict: "company_user_id,student_id" }
+  );
+
+  revalidatePath(`/students/${studentId}`);
+  redirect(`/students/${studentId}?interested=1`);
+}
+
+async function withdrawInterest(formData: FormData) {
+  "use server";
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const studentId = formData.get("student_id")?.toString() ?? "";
+  await supabase
+    .from("connections")
+    .delete()
+    .eq("company_user_id", user.id)
+    .eq("student_id", studentId);
+
+  revalidatePath(`/students/${studentId}`);
+  redirect(`/students/${studentId}`);
+}
+
 export default async function StudentPortfolioPage({
   params,
   searchParams,
 }: Props) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, interested } = await searchParams as { saved?: string; interested?: string };
 
   const supabase = await createClient();
 
-  // Auth required — guests go to login
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Always require authentication — portfolios are never public URLs
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=/students/${id}`);
 
-  // Fetch viewer's role for access control
+  // Fetch guaranteed-existing columns
+  const { data: baseProfile } = await supabase
+    .from("profiles")
+    .select("id, full_name, major, role")
+    .eq("id", id)
+    .maybeSingle<Pick<Profile, "id" | "full_name" | "major" | "role">>();
+
+  if (!baseProfile || baseProfile.role !== "student") notFound();
+
+  // Viewer identity
   const { data: viewerProfile } = await supabase
     .from("profiles")
     .select("role, assigned_major")
@@ -137,35 +182,51 @@ export default async function StudentPortfolioPage({
   const viewerRole = viewerProfile?.role ?? "student";
   const isAdmin = viewerRole === "admin";
   const isManager = viewerRole === "manager";
+  const isCompany = viewerRole === "company";
   const isOwner = user.id === id;
 
-  // Fetch guaranteed-existing columns only
-  const { data: baseProfile } = await supabase
-    .from("profiles")
-    .select("id, full_name, major, role")
-    .eq("id", id)
-    .maybeSingle<Pick<Profile, "id" | "full_name" | "major" | "role">>();
+  // Check open_to_opportunities for company access
+  let openToOpportunities = false;
+  try {
+    const { data: opt } = await supabase
+      .from("profiles")
+      .select("open_to_opportunities")
+      .eq("id", id)
+      .maybeSingle<{ open_to_opportunities: boolean | null }>();
+    openToOpportunities = opt?.open_to_opportunities ?? false;
+  } catch { /* column may not exist yet */ }
 
-  // Only students have portfolios
-  if (!baseProfile || baseProfile.role !== "student") notFound();
-
-  // ── Access control ─────────────────────────────────────────────────────────
-  // Enforce BEFORE fetching any further profile data.
-  // Allowed: portfolio owner · admin · manager scoped to the student's major.
-  // Denied (→ /dashboard): any other authenticated user, including students
-  //   viewing a peer, managers outside their scope, and users with no profile row.
+  // ── Access control ──────────────────────────────────────────────────────────
+  // Owner → always allowed
+  // Admin → always allowed
+  // Manager → only students in their major
+  // Company → only students who opted in (open_to_opportunities = true)
+  // Student viewing peer → blocked (redirect to dashboard)
   if (!isOwner && !isAdmin) {
-    if (!isManager) {
-      redirect("/dashboard");
-    }
-    if (
-      !viewerProfile?.assigned_major ||
-      baseProfile.major !== viewerProfile.assigned_major
-    ) {
+    if (isManager) {
+      if (!viewerProfile?.assigned_major || baseProfile.major !== viewerProfile.assigned_major) {
+        redirect("/dashboard");
+      }
+    } else if (isCompany) {
+      if (!openToOpportunities) redirect("/discover?blocked=1");
+    } else {
+      // Student viewing another student
       redirect("/dashboard");
     }
   }
-  // ──────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // Check if this company has already expressed interest
+  let hasExpressedInterest = false;
+  if (isCompany) {
+    const { data: existing } = await supabase
+      .from("connections")
+      .select("id")
+      .eq("company_user_id", user.id)
+      .eq("student_id", id)
+      .maybeSingle();
+    hasExpressedInterest = !!existing;
+  }
 
   // Fetch all optional columns in one try/catch — degrades gracefully before migration
   let bio: string | null = null;
@@ -184,7 +245,7 @@ export default async function StudentPortfolioPage({
       .from("profiles")
       .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url")
       .eq("id", id)
-      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role">>();
+      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role" | "open_to_opportunities">>();
     bio = extras?.bio ?? null;
     headline = extras?.headline ?? null;
     skills = extras?.skills ?? null;
@@ -200,7 +261,12 @@ export default async function StudentPortfolioPage({
     // columns not yet migrated — show profile without them
   }
 
-  const profile: Profile = { ...baseProfile, bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url };
+  const profile: Profile = {
+    ...baseProfile,
+    bio, headline, skills, linkedin_url, github_url, behance_url,
+    website_url, resume_link, resume_url, resume_name, avatar_url,
+    open_to_opportunities: openToOpportunities,
+  };
 
 
   // Submissions (approved only for public portfolio display)
@@ -265,6 +331,13 @@ export default async function StudentPortfolioPage({
           </div>
         )}
 
+        {/* Interest expressed banner */}
+        {interested === "1" && (
+          <div className="mb-6 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700">
+            ✦ Your interest has been recorded. The student will be notified.
+          </div>
+        )}
+
         {/* Profile header */}
         <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
@@ -300,28 +373,54 @@ export default async function StudentPortfolioPage({
                   )}
                 </div>
 
-                {/* Edit button (owner only) */}
-                {isOwner && (
-                  <Link
-                    href={`/students/${id}/edit`}
-                    className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
-                  >
-                    <svg
-                      className="h-4 w-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
+                {/* Action buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Open to opportunities badge */}
+                  {profile.open_to_opportunities && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Open to Opportunities
+                    </span>
+                  )}
+
+                  {/* Company: express / withdraw interest */}
+                  {isCompany && (
+                    hasExpressedInterest ? (
+                      <form action={withdrawInterest}>
+                        <input type="hidden" name="student_id" value={id} />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600"
+                        >
+                          ✓ Interested · Withdraw
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={expressInterest}>
+                        <input type="hidden" name="student_id" value={id} />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                        >
+                          ✦ I&apos;m Interested
+                        </button>
+                      </form>
+                    )
+                  )}
+
+                  {/* Edit button (owner only) */}
+                  {isOwner && (
+                    <Link
+                      href={`/students/${id}/edit`}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                    Edit Profile
-                  </Link>
-                )}
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit Profile
+                    </Link>
+                  )}
+                </div>
               </div>
 
               {/* Bio */}

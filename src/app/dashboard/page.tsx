@@ -12,22 +12,21 @@ import {
 } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import Link from "next/link";
-import { MAJOR_NAMES } from "@/lib/majors";
+import { getMajorNames } from "@/lib/majors-db";
 import OnboardingBanner from "@/components/onboarding-banner";
 import { getSectionProgressMap, type SectionProgress } from "@/lib/section-progress";
 import SubmitButton from "@/components/submit-button";
 
-type JoinedTask = {
+type RecentSubmission = {
   id: string;
-  joined_at: string;
+  task_id: string;
+  submitted_at: string | null;
+  review_status: string | null;
   tasks: {
     id: string;
     title: string;
-    major: string;
-    status: string;
-    assignment_type: string;
-    assigned_user_id: string | null;
-    due_date: string | null;
+    major: string | null;
+    status: string | null;
   } | null;
 };
 
@@ -60,16 +59,6 @@ function getDueDateInfo(dueDateStr: string | null) {
   return { label: `Due ${formatted}`, cls: "bg-slate-100 text-slate-500", urgent: false, diffDays };
 }
 
-function getStatusClasses(status: string) {
-  const value = status.toLowerCase();
-  if (value === "open")
-    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
-  if (value === "in progress")
-    return "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
-  if (value === "closed")
-    return "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
-  return "bg-slate-100 text-slate-600";
-}
 
 async function dismissOnboarding() {
   "use server";
@@ -90,7 +79,7 @@ async function updateMajor(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const major = formData.get("major")?.toString().trim() || "";
-  if (!MAJOR_NAMES.includes(major)) return;
+  if (!major) return;
   await supabase.from("profiles").update({ major }).eq("id", user.id);
   redirect("/dashboard");
 }
@@ -163,34 +152,24 @@ export default async function DashboardPage({
   const assignedMajor: string | null = profile?.assigned_major ?? null;
   const firstName = profile?.full_name?.split(" ")[0] || "there";
 
-  // For students: load joined tasks and sections
-  const { data: joinedTasks } = await supabase
-    .from("task_joins")
-    .select(
-      `id, joined_at, tasks ( id, title, major, status, assignment_type, assigned_user_id, due_date )`
-    )
+  // Fetch majors from DB for dropdown
+  const majorNames = await getMajorNames(supabase);
+
+  // For students: recent submissions (replaces task_joins)
+  const { data: recentSubsData } = await supabase
+    .from("submissions")
+    .select(`id, task_id, submitted_at, review_status, tasks ( id, title, major, status )`)
     .eq("user_id", user.id)
-    .order("joined_at", { ascending: false });
+    .order("submitted_at", { ascending: false })
+    .limit(6)
+    .returns<RecentSubmission[]>();
+
+  const recentSubmissions = recentSubsData ?? [];
 
   const { count: submissionsCount } = await supabase
     .from("submissions")
     .select("*", { count: "exact", head: true })
     .eq("user_id", user.id);
-
-  const allJoinedTasks = (joinedTasks ?? []) as unknown as JoinedTask[];
-
-  const safeJoinedTasks = isStaff
-    ? allJoinedTasks
-    : allJoinedTasks.filter((item) => {
-        if (!item.tasks) return false;
-        const isMajorTask =
-          item.tasks.assignment_type === "major" &&
-          item.tasks.major === userMajor;
-        const isSpecificUserTask =
-          item.tasks.assignment_type === "specific_user" &&
-          item.tasks.assigned_user_id === user.id;
-        return isMajorTask || isSpecificUserTask;
-      });
 
   // Sections for student view
   let sections: SectionSummary[] = [];
@@ -381,14 +360,6 @@ export default async function DashboardPage({
             <>
               <Card className="rounded-3xl">
                 <CardHeader>
-                  <CardDescription>Joined Tasks</CardDescription>
-                  <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
-                    {safeJoinedTasks.length}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card className="rounded-3xl">
-                <CardHeader>
                   <CardDescription>Submissions</CardDescription>
                   <CardTitle className="mt-1 text-4xl font-bold text-slate-900">
                     {submissionsCount || 0}
@@ -397,7 +368,15 @@ export default async function DashboardPage({
               </Card>
               <Card className="rounded-3xl">
                 <CardHeader>
-                  <CardDescription>Profile Role</CardDescription>
+                  <CardDescription>Major</CardDescription>
+                  <CardTitle className="mt-1 text-2xl font-bold text-slate-900">
+                    {userMajor ?? "Not set"}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card className="rounded-3xl">
+                <CardHeader>
+                  <CardDescription>Role</CardDescription>
                   <CardTitle className="mt-1 text-4xl font-bold capitalize text-slate-900">
                     {role}
                   </CardTitle>
@@ -469,10 +448,10 @@ export default async function DashboardPage({
                 <form action={updateMajor} className="space-y-3">
                   <select
                     name="major"
-                    defaultValue={userMajor || MAJOR_NAMES[0]}
+                    defaultValue={userMajor || majorNames[0] || ""}
                     className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-900"
                   >
-                    {MAJOR_NAMES.map((major) => (
+                    {majorNames.map((major) => (
                       <option key={major} value={major}>
                         {major}
                       </option>
@@ -719,65 +698,70 @@ export default async function DashboardPage({
           </section>
         )}
 
-        {/* Joined tasks — students only */}
+        {/* Recent submissions — students only */}
         {!isStaff && (
           <section>
             <Card className="rounded-3xl">
               <CardHeader>
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div>
-                    <CardTitle>Your Joined Tasks</CardTitle>
+                    <CardTitle>Recent Submissions</CardTitle>
                     <CardDescription className="mt-1">
-                      Track the tasks you joined and continue your work.
+                      Your latest work submissions and their review status.
                     </CardDescription>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-500">
-                    {safeJoinedTasks.length} task{safeJoinedTasks.length !== 1 ? "s" : ""}
-                  </span>
+                  <Link
+                    href="/submissions"
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+                  >
+                    View all →
+                  </Link>
                 </div>
               </CardHeader>
 
               <CardContent>
-                {safeJoinedTasks.length > 0 ? (
+                {recentSubmissions.length > 0 ? (
                   <div className="space-y-3">
-                    {safeJoinedTasks.map((item) =>
-                      item.tasks ? (
+                    {recentSubmissions.map((sub) => {
+                      const statusCfg: Record<string, { label: string; cls: string }> = {
+                        approved: { label: "Approved", cls: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" },
+                        needs_revision: { label: "Needs Revision", cls: "bg-amber-50 text-amber-700 ring-1 ring-amber-200" },
+                      };
+                      const cfg = statusCfg[sub.review_status ?? ""] ?? { label: "Under Review", cls: "bg-slate-100 text-slate-600" };
+                      return (
                         <div
-                          key={item.id}
-                          className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-5 lg:flex-row lg:items-center lg:justify-between"
+                          key={sub.id}
+                          className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap gap-2">
-                              <span
-                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusClasses(
-                                  item.tasks.status
-                                )}`}
-                              >
-                                {item.tasks.status}
+                            <div className="flex flex-wrap gap-1.5 mb-1.5">
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cfg.cls}`}>
+                                {cfg.label}
                               </span>
-                              {item.tasks.major && (
+                              {sub.tasks?.major && (
                                 <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-100">
-                                  {item.tasks.major}
+                                  {sub.tasks.major}
                                 </span>
                               )}
                             </div>
-                            <h3 className="mt-2 text-base font-semibold text-slate-900">
-                              {item.tasks.title}
-                            </h3>
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {sub.tasks?.title ?? "Unknown task"}
+                            </p>
                           </div>
-
-                          <div className="shrink-0">
-                            <Button href={`/tasks/${item.tasks.id}`}>
-                              Open Task →
-                            </Button>
+                          <div className="shrink-0 flex gap-2">
+                            {sub.tasks?.id && (
+                              <Button href={`/tasks/${sub.tasks.id}/submit`} variant="secondary">
+                                {sub.review_status === "needs_revision" ? "Resubmit →" : "View →"}
+                              </Button>
+                            )}
                           </div>
                         </div>
-                      ) : null
-                    )}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                    You have not joined any tasks yet.{" "}
+                    You haven&apos;t submitted any work yet.{" "}
                     <Link href="/tasks" className="font-medium text-blue-600 hover:underline">
                       Browse tasks →
                     </Link>

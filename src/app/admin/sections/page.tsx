@@ -1,5 +1,7 @@
 import { getSectionsForStaff } from "@/actions/sections";
 import { requireStaff, getMajorFilter } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { getMajorNames } from "@/lib/majors-db";
 import SectionFormDialog from "@/components/admin/SectionFormDialog";
 import SectionAdminTable from "@/components/admin/SectionAdminTable";
 
@@ -9,6 +11,8 @@ export default async function AdminSectionsPage() {
   const { profile } = await requireStaff();
   const majorFilter = getMajorFilter(profile);
   const isManager = profile.role === "manager";
+  const supabase = await createClient();
+  const majorNames = await getMajorNames(supabase);
 
   const sections = await getSectionsForStaff();
 
@@ -32,6 +36,7 @@ export default async function AdminSectionsPage() {
         <SectionFormDialog
           mode="create"
           restrictedMajor={majorFilter ?? undefined}
+          availableMajors={majorNames}
         />
       </div>
 
@@ -60,6 +65,7 @@ export default async function AdminSectionsPage() {
         <SectionAdminTable
           sections={sections}
           restrictedMajor={majorFilter ?? undefined}
+          availableMajors={majorNames}
         />
       </div>
     </div>

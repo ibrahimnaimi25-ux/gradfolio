@@ -1,6 +1,8 @@
 import AuthForm from "@/components/auth-form";
 import { Container } from "@/components/ui/container";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { getMajorNames } from "@/lib/majors-db";
 
 export const metadata = { title: "Register | GradFolio" };
 
@@ -22,7 +24,9 @@ const benefits = [
   },
 ];
 
-export default function RegisterPage() {
+export default async function RegisterPage() {
+  const supabase = await createClient();
+  const majorNames = await getMajorNames(supabase);
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-slate-50 py-16">
       <Container>
@@ -70,7 +74,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="flex justify-center lg:justify-end">
-            <AuthForm mode="register" />
+            <AuthForm mode="register" majors={majorNames} />
           </div>
         </div>
       </Container>

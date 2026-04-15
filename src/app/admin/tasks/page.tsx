@@ -4,7 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff, getMajorFilter } from "@/lib/auth";
 import { MajorSectionSelect } from "@/components/admin/MajorSectionSelect";
-import { MAJOR_NAMES } from "@/lib/majors";
+import { getMajorNames } from "@/lib/majors-db";
 import { TASK_STATUS_CLASSES, SUBMISSION_TYPE_LABELS } from "@/lib/constants";
 import type { SubmissionType } from "@/lib/constants";
 
@@ -353,9 +353,10 @@ export default async function AdminTasksPage({
   const labelClass = "mb-2 block text-sm font-medium text-slate-700";
 
   // Major names available to this staff member (locked for managers)
+  const dbMajors = await getMajorNames(supabase);
   const availableMajors = isManager && profile.assigned_major
     ? [profile.assigned_major]
-    : MAJOR_NAMES;
+    : dbMajors;
 
   return (
     <main className="min-h-screen pb-20 pt-10">

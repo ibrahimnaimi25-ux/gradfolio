@@ -10,9 +10,10 @@ interface Props {
   sections: SectionWithTaskCount[];
   /** Passed for managers — locks major field in the create/edit dialog. */
   restrictedMajor?: string;
+  availableMajors?: string[];
 }
 
-export default function SectionAdminTable({ sections, restrictedMajor }: Props) {
+export default function SectionAdminTable({ sections, restrictedMajor, availableMajors }: Props) {
   const [isPending, startTransition] = useTransition();
 
   function handleDelete(id: string, name: string) {
@@ -74,6 +75,7 @@ export default function SectionAdminTable({ sections, restrictedMajor }: Props) 
                 mode="edit"
                 section={section}
                 restrictedMajor={restrictedMajor}
+                availableMajors={availableMajors}
               />
               <button
                 onClick={() => handleDelete(section.id, section.name)}

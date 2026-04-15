@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSuperAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { MAJOR_NAMES } from "@/lib/majors";
+import { getMajorNames } from "@/lib/majors-db";
 
 export const metadata = { title: "Manage Managers | GradFolio" };
 
@@ -25,7 +25,8 @@ async function promoteToManager(formData: FormData) {
   const assignedMajor = String(formData.get("assigned_major") || "").trim();
 
   if (!userId || !assignedMajor) redirect("/admin/managers?error=missing-fields");
-  if (!MAJOR_NAMES.includes(assignedMajor))
+  const validMajors = await getMajorNames(supabase);
+  if (!validMajors.includes(assignedMajor))
     redirect("/admin/managers?error=invalid-major");
 
   const { error } = await supabase
@@ -46,7 +47,8 @@ async function updateManagerMajor(formData: FormData) {
   const assignedMajor = String(formData.get("assigned_major") || "").trim();
 
   if (!userId || !assignedMajor) redirect("/admin/managers?error=missing-fields");
-  if (!MAJOR_NAMES.includes(assignedMajor))
+  const validMajors = await getMajorNames(supabase);
+  if (!validMajors.includes(assignedMajor))
     redirect("/admin/managers?error=invalid-major");
 
   const { error } = await supabase
@@ -97,6 +99,7 @@ export default async function AdminManagersPage({
 
   await requireSuperAdmin();
   const supabase = await createClient();
+  const majorNames = await getMajorNames(supabase);
 
   // Fetch current managers
   const { data: managers } = await supabase
@@ -218,7 +221,7 @@ export default async function AdminManagersPage({
                         className={`${inputClass} flex-1`}
                       >
                         <option value="">Select a major</option>
-                        {MAJOR_NAMES.map((name) => (
+                        {majorNames.map((name) => (
                           <option key={name} value={name}>{name}</option>
                         ))}
                       </select>
@@ -286,7 +289,7 @@ export default async function AdminManagersPage({
                   </label>
                   <select name="assigned_major" required className={inputClass}>
                     <option value="">Select a major</option>
-                    {MAJOR_NAMES.map((name) => (
+                    {majorNames.map((name) => (
                       <option key={name} value={name}>{name}</option>
                     ))}
                   </select>

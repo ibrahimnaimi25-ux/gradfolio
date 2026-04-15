@@ -3,6 +3,7 @@ import { Container } from "@/components/ui/container";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { NavLinks } from "@/components/navbar-links";
+import { NavbarMobile } from "@/components/navbar-mobile";
 
 export default async function Navbar() {
   const supabase = await createClient();
@@ -34,16 +35,18 @@ export default async function Navbar() {
   const staffBaseLinks = [
     { href: "/", label: "Home" },
     { href: "/dashboard", label: "Dashboard" },
+    { href: "/admin/overview", label: "Overview" },
     { href: "/admin/tasks", label: "Tasks" },
     { href: "/admin/sections", label: "Sections" },
     { href: "/admin/submissions", label: "Submissions" },
     { href: "/admin/students", label: "Students" },
   ];
 
-  // Super admin gets manager management on top
+  // Super admin gets manager management + majors on top
   const adminLinks = [
     ...staffBaseLinks,
     { href: "/admin/managers", label: "Managers" },
+    { href: "/admin/majors", label: "Majors" },
   ];
 
   const guestLinks = [
@@ -101,7 +104,7 @@ export default async function Navbar() {
               >
                 {roleBadge}
               </span>
-              <form action="/auth/signout" method="POST">
+              <form action="/auth/signout" method="POST" className="hidden md:block">
                 <button
                   type="submit"
                   className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900"
@@ -118,11 +121,19 @@ export default async function Navbar() {
               >
                 Login
               </Link>
-              <Button href="/register" className="px-4 py-2 text-sm">
+              <Button href="/register" className="hidden md:inline-flex px-4 py-2 text-sm">
                 Get Started
               </Button>
             </>
           )}
+
+          {/* Mobile hamburger — client component handles open/close state */}
+          <NavbarMobile
+            links={links}
+            roleBadge={roleBadge}
+            roleBadgeClass={roleBadgeClass}
+            isLoggedIn={!!user}
+          />
         </div>
       </Container>
     </header>

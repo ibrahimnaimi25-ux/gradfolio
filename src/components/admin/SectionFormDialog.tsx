@@ -13,12 +13,15 @@ interface Props {
    * Passed down from the sections page for managers.
    */
   restrictedMajor?: string;
+  /** Major names fetched from DB by the server page. Falls back to static list. */
+  availableMajors?: string[];
 }
 
 const inputClass =
   "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition";
 
-export default function SectionFormDialog({ mode, section, restrictedMajor }: Props) {
+export default function SectionFormDialog({ mode, section, restrictedMajor, availableMajors }: Props) {
+  const majorOptions = availableMajors && availableMajors.length > 0 ? availableMajors : MAJOR_NAMES;
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -118,14 +121,15 @@ export default function SectionFormDialog({ mode, section, restrictedMajor }: Pr
                       className={inputClass}
                     >
                       <option value="">Select a major</option>
-                      {MAJOR_NAMES.map((name) => (
+                      {majorOptions.map((name) => (
                         <option key={name} value={name}>
                           {name}
                         </option>
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-gray-400">
-                      Only existing majors are allowed. Contact a developer to add new ones.
+                      Only existing majors are allowed. Admins can add new ones in{" "}
+                      <a href="/admin/majors" className="underline hover:text-indigo-600">Majors</a>.
                     </p>
                   </>
                 )}

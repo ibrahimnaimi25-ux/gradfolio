@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { MAJOR_NAMES } from "@/lib/majors";
+import { getMajorNames } from "@/lib/majors-db";
 import { saveProfile } from "@/app/students/[id]/actions";
 import AvatarForm from "./avatar-form";
 import SubmitButton from "@/components/submit-button";
+import TagInput from "@/components/tag-input";
 import type { Metadata } from "next";
 
 interface Props {
@@ -20,6 +21,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
   const { error, photo } = await searchParams;
 
   const supabase = await createClient();
+  const majorNames = await getMajorNames(supabase);
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -175,7 +177,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="">— select major —</option>
-                  {MAJOR_NAMES.map((m) => (
+                  {majorNames.map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>
@@ -201,22 +203,13 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
               </div>
 
               <div>
-                <label
-                  htmlFor="skills"
-                  className="mb-1.5 block text-sm font-medium text-slate-700"
-                >
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Skills
-                  <span className="ml-1.5 text-xs text-slate-400">
-                    (comma-separated)
-                  </span>
                 </label>
-                <input
-                  id="skills"
+                <TagInput
                   name="skills"
-                  type="text"
-                  defaultValue={p.skills ?? ""}
-                  placeholder="Python, Threat Analysis, SIEM, Report Writing"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 transition focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  initialValue={p.skills}
+                  placeholder="Type a skill and press Enter…"
                 />
               </div>
             </div>

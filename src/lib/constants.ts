@@ -1,5 +1,5 @@
 // ─── Roles ────────────────────────────────────────────────────────────────────
-export const APP_ROLES = ["student", "manager", "admin"] as const;
+export const APP_ROLES = ["student", "manager", "admin", "company"] as const;
 export type AppRole = (typeof APP_ROLES)[number];
 
 // ─── Task statuses ─────────────────────────────────────────────────────────────

@@ -1,16 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMajorNames } from "@/lib/majors-db";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Talent Directory | GradFolio",
-  description: "Browse student portfolios and discover talent across all majors.",
+  title: "Discover Talent | GradFolio",
+  description: "Find and connect with student talent across all majors.",
+  robots: { index: false, follow: false },
 };
 
-type SearchParams = Promise<{ q?: string; major?: string }>;
+type SearchParams = Promise<{ q?: string; major?: string; blocked?: string }>;
 
-type PublicStudent = {
+type OptInStudent = {
   id: string;
   full_name: string | null;
   major: string | null;
@@ -36,28 +38,43 @@ function getInitials(name: string | null) {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 }
 
-export default async function TalentPage({
+export default async function DiscoverPage({
   searchParams,
 }: {
   searchParams: SearchParams;
 }) {
-  const { q = "", major = "" } = await searchParams;
+  const { q = "", major = "", blocked } = await searchParams;
   const search = q.toLowerCase().trim();
 
   const supabase = await createClient();
+
+  // Require company login
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login?next=/discover");
+
+  const { data: viewerProfile } = await supabase
+    .from("profiles")
+    .select("role, company_name")
+    .eq("id", user.id)
+    .maybeSingle<{ role: string; company_name: string | null }>();
+
+  if (!viewerProfile || viewerProfile.role !== "company") {
+    redirect("/dashboard");
+  }
+
   const majorNames = await getMajorNames(supabase);
 
-  // Fetch all public student profiles
+  // Fetch students who opted in
   let query = supabase
     .from("profiles")
     .select("id, full_name, major, headline, skills, avatar_url")
     .eq("role", "student")
-    .eq("is_public", true)
+    .eq("open_to_opportunities", true)
     .order("full_name", { ascending: true });
 
   if (major) query = query.eq("major", major);
 
-  const { data: rawStudents } = await query.returns<PublicStudent[]>();
+  const { data: rawStudents } = await query.returns<OptInStudent[]>();
   const students = rawStudents ?? [];
 
   // Fetch approved submission counts for displayed students
@@ -77,12 +94,7 @@ export default async function TalentPage({
   // Client-side search filter on skills/name/headline
   const filtered = search
     ? students.filter((s) => {
-        const haystack = [
-          s.full_name,
-          s.headline,
-          s.skills,
-          s.major,
-        ]
+        const haystack = [s.full_name, s.headline, s.skills, s.major]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -94,16 +106,23 @@ export default async function TalentPage({
     <main className="min-h-screen bg-slate-50 pb-24">
       <div className="mx-auto max-w-6xl px-4 py-12 md:px-6">
 
+        {/* Blocked banner */}
+        {blocked === "1" && (
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            That student hasn&apos;t opted in to be discovered yet. Browse available talent below.
+          </div>
+        )}
+
         {/* Hero */}
-        <div className="mb-10 text-center">
+        <div className="mb-10">
           <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-2">
-            Talent Directory
+            Discover Talent
           </p>
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
-            Find the right talent
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+            Welcome, {viewerProfile.company_name ?? "Company"}
           </h1>
-          <p className="mt-3 text-base text-slate-500 max-w-xl mx-auto">
-            Browse student portfolios with real, reviewed work samples — proof of skills, not just claims.
+          <p className="mt-2 text-base text-slate-500 max-w-xl">
+            Browse students who are open to opportunities. Every profile has real, reviewed work — proof of skills, not just claims.
           </p>
         </div>
 
@@ -171,12 +190,12 @@ export default async function TalentPage({
             <h3 className="text-base font-semibold text-slate-700">No results found</h3>
             <p className="mt-1 text-sm text-slate-400">
               {students.length === 0
-                ? "No students have made their portfolios public yet."
+                ? "No students are currently open to opportunities."
                 : "Try a different search term or major filter."}
             </p>
             {(q || major) && (
               <Link
-                href="/talent"
+                href="/discover"
                 className="mt-5 inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
               >
                 View all talent

@@ -155,6 +155,40 @@ export default async function DashboardPage({
   // Fetch majors from DB for dropdown
   const majorNames = await getMajorNames(supabase);
 
+  // For students: companies interested in them
+  type CompanyInterest = {
+    id: string;
+    company_user_id: string;
+    created_at: string;
+    message: string | null;
+  };
+  let companyInterests: CompanyInterest[] = [];
+  if (!isStaff) {
+    try {
+      const { data: interests } = await supabase
+        .from("connections")
+        .select("id, company_user_id, created_at, message")
+        .eq("student_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(5)
+        .returns<CompanyInterest[]>();
+      companyInterests = interests ?? [];
+    } catch { /* table may not exist yet */ }
+  }
+
+  // Fetch company names for the interests
+  type CompanyRow = { id: string; company_name: string | null; industry: string | null };
+  let companyMap: Record<string, CompanyRow> = {};
+  if (companyInterests.length > 0) {
+    const companyIds = companyInterests.map((i) => i.company_user_id);
+    const { data: companies } = await supabase
+      .from("profiles")
+      .select("id, company_name, industry")
+      .in("id", companyIds)
+      .returns<CompanyRow[]>();
+    companyMap = Object.fromEntries((companies ?? []).map((c) => [c.id, c]));
+  }
+
   // For students: recent submissions (replaces task_joins)
   const { data: recentSubsData } = await supabase
     .from("submissions")
@@ -693,6 +727,56 @@ export default async function DashboardPage({
                     })}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
+        {/* Companies interested — students only, shown when there are any */}
+        {!isStaff && companyInterests.length > 0 && (
+          <section>
+            <Card className="rounded-3xl border-indigo-100">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-lg">
+                    ✦
+                  </div>
+                  <div>
+                    <CardTitle>Companies Interested in You</CardTitle>
+                    <CardDescription className="mt-0.5">
+                      {companyInterests.length} {companyInterests.length === 1 ? "company has" : "companies have"} expressed interest in your profile.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2.5">
+                  {companyInterests.map((interest) => {
+                    const company = companyMap[interest.company_user_id];
+                    if (!company) return null;
+                    return (
+                      <div
+                        key={interest.id}
+                        className="flex items-center justify-between gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/40 px-4 py-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {company.company_name ?? "A company"}
+                          </p>
+                          {company.industry && (
+                            <p className="text-xs text-slate-400">{company.industry}</p>
+                          )}
+                        </div>
+                        <span className="shrink-0 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+                          Interested
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-xs text-slate-400">
+                  Make sure your profile is complete and your best work is submitted to stand out.
+                </p>
               </CardContent>
             </Card>
           </section>

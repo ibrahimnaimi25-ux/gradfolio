@@ -23,12 +23,12 @@ export default async function Navbar() {
 
   const isAdmin = role === "admin";
   const isManager = role === "manager";
+  const isCompany = role === "company";
 
   const studentLinks = [
     { href: "/", label: "Home" },
     { href: "/tasks", label: "Tasks" },
     { href: "/submissions", label: "My Work" },
-    { href: "/talent", label: "Talent" },
     { href: "/dashboard", label: "Dashboard" },
   ];
 
@@ -50,9 +50,14 @@ export default async function Navbar() {
     { href: "/admin/majors", label: "Majors" },
   ];
 
+  const companyLinks = [
+    { href: "/", label: "Home" },
+    { href: "/company/setup", label: "Dashboard" },
+    { href: "/discover", label: "Discover Talent" },
+  ];
+
   const guestLinks = [
     { href: "/", label: "Home" },
-    { href: "/talent", label: "Talent" },
   ];
 
   const links = !user
@@ -61,18 +66,24 @@ export default async function Navbar() {
     ? adminLinks
     : isManager
     ? staffBaseLinks
+    : isCompany
+    ? companyLinks
     : studentLinks;
 
   const roleBadge = isAdmin
     ? "Super Admin"
     : isManager
     ? "Manager"
+    : isCompany
+    ? "Company"
     : "Student";
 
   const roleBadgeClass = isAdmin
     ? "bg-violet-100 text-violet-700"
     : isManager
     ? "bg-sky-100 text-sky-700"
+    : isCompany
+    ? "bg-indigo-100 text-indigo-700"
     : "bg-slate-100 text-slate-600";
 
   return (

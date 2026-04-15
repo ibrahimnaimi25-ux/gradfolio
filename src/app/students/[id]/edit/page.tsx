@@ -48,17 +48,17 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
   let resume_url: string | null = null;
   let resume_name: string | null = null;
   let avatar_url: string | null = null;
-  let is_public = false;
+  let open_to_opportunities = false;
   try {
     const { data: extras } = await supabase
       .from("profiles")
-      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url, is_public")
+      .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url, open_to_opportunities")
       .eq("id", id)
       .maybeSingle<{
         bio: string | null; headline: string | null; skills: string | null;
         linkedin_url: string | null; github_url: string | null; behance_url: string | null;
         website_url: string | null; resume_link: string | null; resume_url: string | null;
-        resume_name: string | null; avatar_url: string | null; is_public: boolean | null;
+        resume_name: string | null; avatar_url: string | null; open_to_opportunities: boolean | null;
       }>();
     bio = extras?.bio ?? null;
     headline = extras?.headline ?? null;
@@ -71,7 +71,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
     resume_url = extras?.resume_url ?? null;
     resume_name = extras?.resume_name ?? null;
     avatar_url = extras?.avatar_url ?? null;
-    is_public = extras?.is_public ?? false;
+    open_to_opportunities = extras?.open_to_opportunities ?? false;
   } catch {
     // columns not yet migrated — degrade gracefully
   }
@@ -80,7 +80,7 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
     full_name: baseProfile?.full_name ?? null,
     major: baseProfile?.major ?? null,
     bio, headline, skills, linkedin_url, github_url, behance_url,
-    website_url, resume_link, resume_url, resume_name, avatar_url, is_public,
+    website_url, resume_link, resume_url, resume_name, avatar_url, open_to_opportunities,
   };
 
   return (
@@ -93,8 +93,8 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
             Edit Profile
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {p.is_public
-              ? "Your portfolio is public — anyone with the link can view it."
+            {p.open_to_opportunities
+              ? "You're open to opportunities — companies can discover and view your portfolio."
               : "Your portfolio is private — only managers and admins can view it."}
           </p>
         </div>
@@ -313,38 +313,39 @@ export default async function EditProfilePage({ params, searchParams }: Props) {
             </section>
           )}
 
-          {/* Portfolio visibility */}
+          {/* Opportunities visibility */}
           <section className="mb-6 rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-slate-400">
-              Portfolio Visibility
+              Open to Opportunities
             </h2>
             <p className="mb-4 text-xs text-slate-400">
-              Public portfolios appear in the{" "}
-              <a href="/talent" className="text-indigo-600 hover:underline">Talent Directory</a>{" "}
-              and can be viewed by anyone with the link — including employers.
+              When enabled, companies registered on GradFolio can discover your profile
+              in the{" "}
+              <a href="/discover" className="text-indigo-600 hover:underline">talent directory</a>{" "}
+              and express interest in you. Your work is never exposed to the public internet.
             </p>
 
             {/* Hidden input for unchecked state */}
-            <input type="hidden" name="is_public" value="0" />
+            <input type="hidden" name="open_to_opportunities" value="0" />
 
             <label className="flex cursor-pointer items-start gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 hover:bg-white transition">
               <div className="relative mt-0.5 shrink-0">
                 <input
                   type="checkbox"
-                  name="is_public"
+                  name="open_to_opportunities"
                   value="1"
-                  defaultChecked={p.is_public}
+                  defaultChecked={p.open_to_opportunities}
                   className="peer sr-only"
                 />
-                <div className="h-5 w-9 rounded-full bg-slate-200 transition peer-checked:bg-indigo-500" />
+                <div className="h-5 w-9 rounded-full bg-slate-200 transition peer-checked:bg-emerald-500" />
                 <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-900">
-                  Make my portfolio public
+                  I&apos;m open to opportunities
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Employers and visitors can discover and view your approved work.
+                  Companies on the platform can find you and express interest. Only registered companies can see your profile.
                 </p>
               </div>
             </label>

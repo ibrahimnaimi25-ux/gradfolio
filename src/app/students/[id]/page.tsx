@@ -1,8 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { headers } from "next/headers";
-import ShareButton from "@/components/share-button";
+import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
 
 interface Props {
@@ -26,7 +25,7 @@ type Profile = {
   resume_url: string | null;
   resume_name: string | null;
   avatar_url: string | null;
-  is_public: boolean;
+  open_to_opportunities: boolean;
 };
 
 type SubmissionWithTask = {
@@ -45,27 +44,7 @@ type SubmissionWithTask = {
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { id } = await params;
-  const supabase = await createClient();
-
-  try {
-    const { data } = await supabase
-      .from("profiles")
-      .select("full_name, headline, is_public")
-      .eq("id", id)
-      .maybeSingle<{ full_name: string | null; headline: string | null; is_public: boolean | null }>();
-
-    if (data?.is_public) {
-      return {
-        title: data.full_name
-          ? `${data.full_name} | GradFolio Portfolio`
-          : "Portfolio | GradFolio",
-        description: data.headline ?? `Student portfolio on GradFolio`,
-        robots: { index: true, follow: true },
-      };
-    }
-  } catch { /* ignore */ }
-
+  void params;
   return {
     title: "Portfolio | GradFolio",
     robots: { index: false, follow: false },
@@ -134,78 +113,120 @@ function MajorBadge({ major }: { major: string | null }) {
   );
 }
 
+// ── Server action: company expresses interest in student ──────────────────────
+async function expressInterest(formData: FormData) {
+  "use server";
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const studentId = formData.get("student_id")?.toString() ?? "";
+  const message = formData.get("message")?.toString().trim() || null;
+
+  // Upsert so double-click doesn't create duplicates
+  await supabase.from("connections").upsert(
+    { company_user_id: user.id, student_id: studentId, message, status: "interested" },
+    { onConflict: "company_user_id,student_id" }
+  );
+
+  revalidatePath(`/students/${studentId}`);
+  redirect(`/students/${studentId}?interested=1`);
+}
+
+async function withdrawInterest(formData: FormData) {
+  "use server";
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const studentId = formData.get("student_id")?.toString() ?? "";
+  await supabase
+    .from("connections")
+    .delete()
+    .eq("company_user_id", user.id)
+    .eq("student_id", studentId);
+
+  revalidatePath(`/students/${studentId}`);
+  redirect(`/students/${studentId}`);
+}
+
 export default async function StudentPortfolioPage({
   params,
   searchParams,
 }: Props) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, interested } = await searchParams as { saved?: string; interested?: string };
 
   const supabase = await createClient();
 
-  // Fetch guaranteed-existing columns first (before auth check)
+  // Always require authentication — portfolios are never public URLs
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect(`/login?next=/students/${id}`);
+
+  // Fetch guaranteed-existing columns
   const { data: baseProfile } = await supabase
     .from("profiles")
     .select("id, full_name, major, role")
     .eq("id", id)
     .maybeSingle<Pick<Profile, "id" | "full_name" | "major" | "role">>();
 
-  // Only students have portfolios
   if (!baseProfile || baseProfile.role !== "student") notFound();
 
-  // Check is_public before requiring auth
-  let isPublicProfile = false;
-  try {
-    const { data: vis } = await supabase
-      .from("profiles")
-      .select("is_public")
-      .eq("id", id)
-      .maybeSingle<{ is_public: boolean | null }>();
-    isPublicProfile = vis?.is_public ?? false;
-  } catch { /* column may not exist yet */ }
-
-  // Auth check — public portfolios skip login requirement
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user && !isPublicProfile) {
-    redirect(`/login?next=/students/${id}`);
-  }
-
   // Viewer identity
-  let viewerRole = "guest";
-  let viewerAssignedMajor: string | null = null;
-  if (user) {
-    const { data: viewerProfile } = await supabase
-      .from("profiles")
-      .select("role, assigned_major")
-      .eq("id", user.id)
-      .maybeSingle<{ role: string; assigned_major: string | null }>();
-    viewerRole = viewerProfile?.role ?? "student";
-    viewerAssignedMajor = viewerProfile?.assigned_major ?? null;
-  }
+  const { data: viewerProfile } = await supabase
+    .from("profiles")
+    .select("role, assigned_major")
+    .eq("id", user.id)
+    .maybeSingle<{ role: string; assigned_major: string | null }>();
 
+  const viewerRole = viewerProfile?.role ?? "student";
   const isAdmin = viewerRole === "admin";
   const isManager = viewerRole === "manager";
-  const isOwner = user?.id === id;
+  const isCompany = viewerRole === "company";
+  const isOwner = user.id === id;
 
-  // ── Access control ─────────────────────────────────────────────────────────
-  // Public portfolio: accessible to everyone (guests included)
-  // Private portfolio: owner · admin · manager scoped to student's major only
-  if (!isPublicProfile && !isOwner && !isAdmin) {
-    if (!isManager) redirect("/dashboard");
-    if (!viewerAssignedMajor || baseProfile.major !== viewerAssignedMajor) {
+  // Check open_to_opportunities for company access
+  let openToOpportunities = false;
+  try {
+    const { data: opt } = await supabase
+      .from("profiles")
+      .select("open_to_opportunities")
+      .eq("id", id)
+      .maybeSingle<{ open_to_opportunities: boolean | null }>();
+    openToOpportunities = opt?.open_to_opportunities ?? false;
+  } catch { /* column may not exist yet */ }
+
+  // ── Access control ──────────────────────────────────────────────────────────
+  // Owner → always allowed
+  // Admin → always allowed
+  // Manager → only students in their major
+  // Company → only students who opted in (open_to_opportunities = true)
+  // Student viewing peer → blocked (redirect to dashboard)
+  if (!isOwner && !isAdmin) {
+    if (isManager) {
+      if (!viewerProfile?.assigned_major || baseProfile.major !== viewerProfile.assigned_major) {
+        redirect("/dashboard");
+      }
+    } else if (isCompany) {
+      if (!openToOpportunities) redirect("/discover?blocked=1");
+    } else {
+      // Student viewing another student
       redirect("/dashboard");
     }
   }
-  // ──────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
 
-  // Build public URL for share button
-  const headersList = await headers();
-  const host = headersList.get("host") ?? "localhost:3000";
-  const protocol = host.startsWith("localhost") ? "http" : "https";
-  const portfolioUrl = `${protocol}://${host}/students/${id}`;
+  // Check if this company has already expressed interest
+  let hasExpressedInterest = false;
+  if (isCompany) {
+    const { data: existing } = await supabase
+      .from("connections")
+      .select("id")
+      .eq("company_user_id", user.id)
+      .eq("student_id", id)
+      .maybeSingle();
+    hasExpressedInterest = !!existing;
+  }
 
   // Fetch all optional columns in one try/catch — degrades gracefully before migration
   let bio: string | null = null;
@@ -224,7 +245,7 @@ export default async function StudentPortfolioPage({
       .from("profiles")
       .select("bio, headline, skills, linkedin_url, github_url, behance_url, website_url, resume_link, resume_url, resume_name, avatar_url")
       .eq("id", id)
-      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role" | "is_public">>();
+      .maybeSingle<Omit<Profile, "id" | "full_name" | "major" | "role" | "open_to_opportunities">>();
     bio = extras?.bio ?? null;
     headline = extras?.headline ?? null;
     skills = extras?.skills ?? null;
@@ -244,7 +265,7 @@ export default async function StudentPortfolioPage({
     ...baseProfile,
     bio, headline, skills, linkedin_url, github_url, behance_url,
     website_url, resume_link, resume_url, resume_name, avatar_url,
-    is_public: isPublicProfile,
+    open_to_opportunities: openToOpportunities,
   };
 
 
@@ -310,6 +331,13 @@ export default async function StudentPortfolioPage({
           </div>
         )}
 
+        {/* Interest expressed banner */}
+        {interested === "1" && (
+          <div className="mb-6 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700">
+            ✦ Your interest has been recorded. The student will be notified.
+          </div>
+        )}
+
         {/* Profile header */}
         <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
@@ -347,21 +375,37 @@ export default async function StudentPortfolioPage({
 
                 {/* Action buttons */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* Public/private badge */}
-                  {isOwner && (
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      profile.is_public
-                        ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                        : "bg-slate-100 text-slate-500"
-                    }`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${profile.is_public ? "bg-emerald-500" : "bg-slate-400"}`} />
-                      {profile.is_public ? "Public" : "Private"}
+                  {/* Open to opportunities badge */}
+                  {profile.open_to_opportunities && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Open to Opportunities
                     </span>
                   )}
 
-                  {/* Share button — shown when public */}
-                  {profile.is_public && (
-                    <ShareButton url={portfolioUrl} />
+                  {/* Company: express / withdraw interest */}
+                  {isCompany && (
+                    hasExpressedInterest ? (
+                      <form action={withdrawInterest}>
+                        <input type="hidden" name="student_id" value={id} />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600"
+                        >
+                          ✓ Interested · Withdraw
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={expressInterest}>
+                        <input type="hidden" name="student_id" value={id} />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                        >
+                          ✦ I&apos;m Interested
+                        </button>
+                      </form>
+                    )
                   )}
 
                   {/* Edit button (owner only) */}
@@ -370,18 +414,8 @@ export default async function StudentPortfolioPage({
                       href={`/students/${id}/edit`}
                       className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:border-slate-300"
                     >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                        />
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                       Edit Profile
                     </Link>

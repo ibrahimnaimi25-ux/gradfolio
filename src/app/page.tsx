@@ -461,6 +461,15 @@ export default function HomePage() {
                 </Link>
               </div>
 
+              <div className="mt-5 flex justify-center">
+                <Link
+                  href="/company/register"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-5 py-2 text-sm font-medium text-indigo-100 transition hover:bg-white/20"
+                >
+                  🏢 Are you a company? Register here →
+                </Link>
+              </div>
+
               <p className="mt-6 text-sm text-indigo-300">
                 Free forever for students · No credit card needed
               </p>

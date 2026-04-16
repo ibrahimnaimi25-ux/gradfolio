@@ -2,7 +2,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { requireStaff, getMajorFilter } from "@/lib/auth";
+import { requireStaff, getMajorFilter, getMajorLabel } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { MajorSectionSelect } from "@/components/admin/MajorSectionSelect";
 import { getMajorNames } from "@/lib/majors-db";
 import { TASK_STATUS_CLASSES, SUBMISSION_TYPE_LABELS } from "@/lib/constants";
@@ -48,6 +49,7 @@ type TaskRow = {
   section_id: string | null;
   created_at: string;
   due_date: string | null;
+  order_index: number | null;
 };
 
 type UserMap = Record<string, { full_name: string | null; major: string | null }>;
@@ -129,8 +131,8 @@ async function createTask(formData: FormData) {
     redirect("/admin/tasks?error=select-a-student#create-task");
   if (!sectionId) redirect("/admin/tasks?error=select-a-section#create-task");
 
-  // Managers can only create tasks for their assigned major
-  if (majorFilter !== null && major && major !== majorFilter) {
+  // Managers can only create tasks for their assigned major(s)
+  if (majorFilter !== null && major && !majorFilter.includes(major)) {
     redirect("/admin/tasks?error=major-not-allowed#create-task");
   }
 
@@ -147,8 +149,9 @@ async function createTask(formData: FormData) {
     due_date: dueDate,
   };
 
-  const { error } = await supabase.from("tasks").insert(payload);
+  const { data: newTask, error } = await supabase.from("tasks").insert(payload).select("id").maybeSingle();
   if (error) redirect(`/admin/tasks?error=${encodeURIComponent(error.message)}`);
+  await logAudit({ userId: user.id, action: "task.created", entityType: "task", entityId: newTask?.id, metadata: { title } });
   revalidatePath("/admin/tasks");
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
@@ -179,8 +182,8 @@ async function updateTask(formData: FormData) {
   if (assignmentType === "direct" && !assignedUserId)
     redirect("/admin/tasks?error=select-a-student#manage-tasks");
 
-  // Managers can only update tasks for their assigned major
-  if (majorFilter !== null && major && major !== majorFilter) {
+  // Managers can only update tasks for their assigned major(s)
+  if (majorFilter !== null && major && !majorFilter.includes(major)) {
     redirect("/admin/tasks?error=major-not-allowed#manage-tasks");
   }
 
@@ -227,7 +230,7 @@ async function deleteTask(formData: FormData) {
       .select("major")
       .eq("id", taskId)
       .maybeSingle<{ major: string | null }>();
-    if (!task || task.major !== majorFilter) {
+    if (!task || !majorFilter.includes(task.major ?? "")) {
       redirect("/admin/tasks?error=access-denied#manage-tasks");
     }
   }
@@ -240,6 +243,57 @@ async function deleteTask(formData: FormData) {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   redirect("/admin/tasks?success=task-deleted#manage-tasks");
+}
+
+async function moveTask(formData: FormData, direction: "up" | "down") {
+  "use server";
+  const { supabase } = await requireStaff();
+  const taskId = String(formData.get("task_id") || "").trim();
+  const sectionId = String(formData.get("section_id") || "").trim();
+  if (!taskId || !sectionId) redirect("/admin/tasks#manage-tasks");
+
+  const { data: tasks } = await supabase
+    .from("tasks")
+    .select("id, order_index")
+    .eq("section_id", sectionId)
+    .order("order_index", { ascending: true, nullsFirst: true })
+    .returns<{ id: string; order_index: number | null }[]>();
+
+  if (!tasks || tasks.length < 2) redirect("/admin/tasks#manage-tasks");
+
+  // Normalize null order_index values
+  const normalized = tasks.map((t, i) => ({
+    id: t.id,
+    order_index: t.order_index ?? i,
+  }));
+
+  const idx = normalized.findIndex((t) => t.id === taskId);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= normalized.length) {
+    redirect("/admin/tasks#manage-tasks");
+  }
+
+  const curr = normalized[idx];
+  const swap = normalized[swapIdx];
+
+  await Promise.all([
+    supabase.from("tasks").update({ order_index: swap.order_index }).eq("id", curr.id),
+    supabase.from("tasks").update({ order_index: curr.order_index }).eq("id", swap.id),
+  ]);
+
+  revalidatePath("/admin/tasks");
+  revalidatePath("/tasks");
+  redirect("/admin/tasks?success=task-reordered#manage-tasks");
+}
+
+async function moveTaskUp(formData: FormData) {
+  "use server";
+  return moveTask(formData, "up");
+}
+
+async function moveTaskDown(formData: FormData) {
+  "use server";
+  return moveTask(formData, "down");
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -265,7 +319,7 @@ export default async function AdminTasksPage({
     .from("sections")
     .select("id, name, major")
     .order("major", { ascending: true });
-  if (majorFilter !== null) sectionsQuery = sectionsQuery.eq("major", majorFilter);
+  if (majorFilter !== null && majorFilter.length > 0) sectionsQuery = sectionsQuery.in("major", majorFilter);
   const { data: sections } = await sectionsQuery.returns<SectionRow[]>();
 
   let studentsQuery = supabase
@@ -273,16 +327,16 @@ export default async function AdminTasksPage({
     .select("id, full_name, major, role")
     .eq("role", "student")
     .order("full_name", { ascending: true });
-  if (majorFilter !== null) studentsQuery = studentsQuery.eq("major", majorFilter);
+  if (majorFilter !== null && majorFilter.length > 0) studentsQuery = studentsQuery.in("major", majorFilter);
   const { data: students } = await studentsQuery.returns<StudentRow[]>();
 
   let tasksQuery = supabase
     .from("tasks")
     .select(
-      "id, title, description, major, status, assignment_type, submission_type, assigned_user_id, section_id, created_at, due_date"
+      "id, title, description, major, status, assignment_type, submission_type, assigned_user_id, section_id, created_at, due_date, order_index"
     )
-    .order("created_at", { ascending: false });
-  if (majorFilter !== null) tasksQuery = tasksQuery.eq("major", majorFilter);
+    .order("order_index", { ascending: true, nullsFirst: true });
+  if (majorFilter !== null && majorFilter.length > 0) tasksQuery = tasksQuery.in("major", majorFilter);
   const { data: tasksRaw } = await tasksQuery.returns<TaskRow[]>();
 
   // Pending review count for this staff member's scope
@@ -354,9 +408,8 @@ export default async function AdminTasksPage({
 
   // Major names available to this staff member (locked for managers)
   const dbMajors = await getMajorNames(supabase);
-  const availableMajors = isManager && profile.assigned_major
-    ? [profile.assigned_major]
-    : dbMajors;
+  const availableMajors = majorFilter !== null && majorFilter.length > 0 ? majorFilter : dbMajors;
+  const majorLabel = getMajorLabel(profile);
 
   return (
     <main className="min-h-screen pb-20 pt-10">
@@ -367,14 +420,14 @@ export default async function AdminTasksPage({
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-violet-600">
-                {isManager ? `Manager Panel — ${profile.assigned_major ?? ""}` : "Admin Panel"}
+                {isManager ? `Manager Panel — ${majorLabel}` : "Admin Panel"}
               </p>
               <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">
                 Task Management
               </h1>
               <p className="mt-3 text-base leading-7 text-slate-500">
                 {isManager
-                  ? `Create and manage tasks for ${profile.assigned_major ?? "your major"}.`
+                  ? `Create and manage tasks for ${majorLabel || "your major"}.`
                   : "Create tasks and manage tasks across all majors."}
               </p>
             </div>
@@ -410,8 +463,8 @@ export default async function AdminTasksPage({
         {/* Stat cards */}
         <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            { label: "Total Tasks", value: totalTasks, desc: isManager ? `In ${profile.assigned_major}` : "All created tasks" },
-            { label: "Students", value: totalStudents, desc: isManager ? `In ${profile.assigned_major}` : "Registered students" },
+            { label: "Total Tasks", value: totalTasks, desc: isManager ? `In ${majorLabel}` : "All created tasks" },
+            { label: "Students", value: totalStudents, desc: isManager ? `In ${majorLabel}` : "Registered students" },
           ].map((stat) => (
             <div key={stat.label} className="rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
               <p className="text-sm text-slate-500">{stat.label}</p>
@@ -485,7 +538,7 @@ export default async function AdminTasksPage({
             <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Create Task</h2>
             <p className="mt-2 text-sm text-slate-500">
               {isManager
-                ? `Create a new task for ${profile.assigned_major ?? "your major"}.`
+                ? `Create a new task for ${majorLabel || "your major"}.`
                 : "Create a new task for a major or assign it directly to one student."}
             </p>
           </div>
@@ -749,7 +802,7 @@ export default async function AdminTasksPage({
                           defaultSectionId={task.section_id ?? ""}
                           inputClass={inputClass}
                           labelClass={labelClass}
-                          lockedMajor={isManager && profile.assigned_major ? profile.assigned_major : undefined}
+                          lockedMajor={isManager && majorFilter?.length === 1 ? majorFilter[0] : undefined}
                         />
                         <div>
                           <label htmlFor={`assigned_user_id-${task.id}`} className={labelClass}>
@@ -789,15 +842,43 @@ export default async function AdminTasksPage({
                         </button>
                       </div>
                     </form>
-                    <form action={deleteTask} className="mt-3">
-                      <input type="hidden" name="task_id" value={task.id} />
-                      <button
-                        type="submit"
-                        className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-white px-5 py-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
-                      >
-                        Delete Task
-                      </button>
-                    </form>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {task.section_id && (
+                        <>
+                          <form action={moveTaskUp}>
+                            <input type="hidden" name="task_id" value={task.id} />
+                            <input type="hidden" name="section_id" value={task.section_id} />
+                            <button
+                              type="submit"
+                              title="Move task up within section"
+                              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                            >
+                              ↑ Move Up
+                            </button>
+                          </form>
+                          <form action={moveTaskDown}>
+                            <input type="hidden" name="task_id" value={task.id} />
+                            <input type="hidden" name="section_id" value={task.section_id} />
+                            <button
+                              type="submit"
+                              title="Move task down within section"
+                              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                            >
+                              ↓ Move Down
+                            </button>
+                          </form>
+                        </>
+                      )}
+                      <form action={deleteTask}>
+                        <input type="hidden" name="task_id" value={task.id} />
+                        <button
+                          type="submit"
+                          className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-white px-5 py-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50"
+                        >
+                          Delete Task
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 );
               })

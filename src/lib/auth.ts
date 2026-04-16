@@ -6,8 +6,10 @@ export type StaffProfile = {
   id: string;
   full_name: string | null;
   role: AppRole;
-  /** Set for managers — their assigned major. Null means all-access (admin). */
+  /** Legacy single-major field. Prefer assigned_majors when available. */
   assigned_major: string | null;
+  /** Multi-major support: list of majors a manager can access. */
+  assigned_majors: string[] | null;
 };
 
 /**
@@ -23,7 +25,7 @@ export async function requireStaff() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, role, assigned_major")
+    .select("id, full_name, role, assigned_major, assigned_majors")
     .eq("id", user.id)
     .maybeSingle<StaffProfile>();
 
@@ -46,12 +48,25 @@ export async function requireSuperAdmin() {
 
 /**
  * Returns the major filter to apply to Supabase queries.
- * - Admin  → null   (no filter, sees everything)
- * - Manager → their assigned_major string (may be "" if misconfigured)
+ * - Admin   → null  (no filter, sees everything)
+ * - Manager → string[] of their assigned majors (use .in("major", filter))
  */
-export function getMajorFilter(profile: StaffProfile): string | null {
-  if (profile.role === "manager") return profile.assigned_major ?? "";
-  return null;
+export function getMajorFilter(profile: StaffProfile): string[] | null {
+  if (profile.role !== "manager") return null;
+  if (profile.assigned_majors && profile.assigned_majors.length > 0) {
+    return profile.assigned_majors;
+  }
+  if (profile.assigned_major) return [profile.assigned_major];
+  return [];
+}
+
+/**
+ * Returns a display-friendly string of the manager's assigned major(s).
+ */
+export function getMajorLabel(profile: StaffProfile): string {
+  const filter = getMajorFilter(profile);
+  if (!filter || filter.length === 0) return "";
+  return filter.join(", ");
 }
 
 export type CompanyProfile = {

@@ -10,11 +10,17 @@
 //     ADD COLUMN IF NOT EXISTS assigned_major text;
 // ──────────────────────────────────────────────────────────────────────────────
 
+// ─── Additional DB migrations ─────────────────────────────────────────────────
+// ALTER TABLE submissions ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;
+// ALTER TABLE profiles ADD COLUMN IF NOT EXISTS assigned_majors text[];
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { requireStaff, getMajorFilter } from "@/lib/auth";
+import { requireStaff, getMajorFilter, getMajorLabel } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { logAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendReviewedEmail } from "@/lib/email";
 import SubmitButton from "@/components/submit-button";
@@ -127,7 +133,7 @@ async function reviewSubmission(formData: FormData) {
 
   if (!submissionId) redirect("/admin/submissions?error=missing-submission-id");
 
-  // Managers: verify this submission belongs to a task in their major
+  // Managers: verify this submission belongs to a task in their major(s)
   if (majorFilter !== null) {
     const { data: sub } = await supabase
       .from("submissions")
@@ -140,7 +146,7 @@ async function reviewSubmission(formData: FormData) {
         .select("major")
         .eq("id", sub.task_id)
         .maybeSingle<{ major: string | null }>();
-      if (!task || task.major !== majorFilter) {
+      if (!task || !majorFilter.includes(task.major ?? "")) {
         redirect("/admin/submissions?error=access-denied");
       }
     }
@@ -209,10 +215,84 @@ async function reviewSubmission(formData: FormData) {
     }
   }
 
+  // Fire-and-forget audit log
+  await logAudit({
+    userId: user.id,
+    action: "submission.reviewed",
+    entityType: "submission",
+    entityId: submissionId,
+    metadata: { review_status: reviewStatus, score: score ?? undefined },
+  });
+
   revalidatePath("/admin/submissions");
   revalidatePath("/admin/tasks");
   revalidatePath("/dashboard");
   redirect("/admin/submissions?success=review-saved");
+}
+
+// ─── Server action: bulk review ───────────────────────────────────────────────
+
+async function bulkReview(formData: FormData) {
+  "use server";
+  const { supabase, user, profile } = await requireStaff();
+  const majorFilter = getMajorFilter(profile);
+  const ids = formData.getAll("ids").map(String).filter(Boolean);
+  const status = String(formData.get("bulk_status") || "approved").trim();
+
+  if (!ids.length) redirect("/admin/submissions?error=no-submissions-selected");
+  if (!["approved", "needs_revision", "rejected"].includes(status)) {
+    redirect("/admin/submissions?error=invalid-status");
+  }
+
+  const updatePayload = {
+    review_status: status,
+    reviewed_at: new Date().toISOString(),
+    reviewed_by: user.id,
+  };
+
+  // If manager: filter IDs to only those belonging to their major(s)
+  let allowedIds = ids;
+  if (majorFilter !== null && majorFilter.length > 0) {
+    const { data: subs } = await supabase
+      .from("submissions")
+      .select("id, task_id")
+      .in("id", ids)
+      .returns<{ id: string; task_id: string }[]>();
+    if (subs && subs.length > 0) {
+      const taskIds = subs.map((s) => s.task_id);
+      const { data: tasks } = await supabase
+        .from("tasks")
+        .select("id, major")
+        .in("id", taskIds)
+        .in("major", majorFilter)
+        .returns<{ id: string; major: string | null }[]>();
+      const allowedTaskIds = new Set((tasks ?? []).map((t) => t.id));
+      allowedIds = subs.filter((s) => allowedTaskIds.has(s.task_id)).map((s) => s.id);
+    } else {
+      allowedIds = [];
+    }
+  }
+
+  if (!allowedIds.length) redirect("/admin/submissions?error=no-allowed-submissions");
+
+  const { error } = await supabase
+    .from("submissions")
+    .update(updatePayload)
+    .in("id", allowedIds);
+
+  if (error) redirect(`/admin/submissions?error=${encodeURIComponent(error.message)}`);
+
+  // Fire-and-forget audit log
+  await logAudit({
+    userId: user.id,
+    action: "submission.bulk_reviewed",
+    entityType: "submission",
+    metadata: { ids: allowedIds, review_status: status, count: allowedIds.length },
+  });
+
+  revalidatePath("/admin/submissions");
+  revalidatePath("/dashboard");
+  redirect(`/admin/submissions?success=${allowedIds.length}-submissions-updated`);
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -237,7 +317,7 @@ export default async function AdminSubmissionsPage({
   let tasksQuery = supabase
     .from("tasks")
     .select("id, title, major, section_id, submission_type");
-  if (majorFilter !== null) tasksQuery = tasksQuery.eq("major", majorFilter);
+  if (majorFilter !== null && majorFilter.length > 0) tasksQuery = tasksQuery.in("major", majorFilter);
   const { data: tasksRaw } = await tasksQuery.returns<TaskRow[]>();
 
   const taskIds = (tasksRaw ?? []).map((t) => t.id);
@@ -350,14 +430,14 @@ export default async function AdminSubmissionsPage({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-amber-600">
-                {isManager ? `Manager — ${profile.assigned_major ?? ""}` : "Super Admin"}
+                {isManager ? `Manager — ${getMajorLabel(profile)}` : "Super Admin"}
               </p>
               <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
                 Submission Review
               </h1>
               <p className="mt-3 text-base text-slate-500">
                 {isManager
-                  ? `Review student submissions for ${profile.assigned_major ?? "your major"}.`
+                  ? `Review student submissions for ${getMajorLabel(profile) || "your major"}.`
                   : "Review and provide feedback on all student submissions."}
               </p>
             </div>
@@ -448,6 +528,58 @@ export default async function AdminSubmissionsPage({
             )}
           </form>
         </section>
+
+        {/* Bulk actions + CSV export */}
+        {filtered.length > 0 && (
+          <section className="mt-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-medium text-slate-700">
+                Bulk Actions
+                <span className="ml-2 text-xs text-slate-400">({filtered.length} shown)</span>
+              </p>
+              <Link
+                href="/api/export/submissions"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+              >
+                ↓ Export CSV
+              </Link>
+            </div>
+            <form action={bulkReview} className="mt-3">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <select
+                  name="bulk_status"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="approved">✓ Approve selected</option>
+                  <option value="needs_revision">↺ Needs Revision</option>
+                  <option value="rejected">✗ Reject selected</option>
+                </select>
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+                >
+                  Apply to Selected
+                </button>
+              </div>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50 p-3">
+                {filtered.map((s) => {
+                  const t = taskMap[s.task_id];
+                  const student = getUserName(s.user_id, userMap);
+                  return (
+                    <label key={s.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white transition">
+                      <input type="checkbox" name="ids" value={s.id} className="h-4 w-4 rounded border-slate-300 text-indigo-600" />
+                      <span className="text-sm text-slate-700 truncate">
+                        <span className="font-medium">{t?.title ?? "Unknown task"}</span>
+                        <span className="mx-1.5 text-slate-300">·</span>
+                        <span className="text-slate-500">{student}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </form>
+          </section>
+        )}
 
         {/* Submission cards */}
         <section className="mt-6 space-y-5">

@@ -1,8 +1,15 @@
+// ─── DB migrations required ───────────────────────────────────────────────────
+// ALTER TABLE submissions ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;
+// ALTER TABLE tasks ADD COLUMN IF NOT EXISTS order_index integer DEFAULT 0;
+// ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cohort_id uuid;
+// ─────────────────────────────────────────────────────────────────────────────
+
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SubmitButton from "@/components/submit-button";
+import { logAudit } from "@/lib/audit";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -45,6 +52,7 @@ type SubmissionRow = {
   admin_feedback: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  version: number | null;
 };
 
 function formatDate(value: string | null) {
@@ -134,9 +142,20 @@ async function saveSubmission(formData: FormData) {
     .maybeSingle<{ id: string; role: "student" | "admin"; major: string | null }>();
   if (!profile || profile.role !== "student") redirect("/dashboard");
   const { data: task } = await supabase
-    .from("tasks").select("id, major, assigned_user_id, submission_type").eq("id", taskId)
-    .maybeSingle<{ id: string; major: string | null; assigned_user_id: string | null; submission_type: SubmissionType | null }>();
+    .from("tasks").select("id, major, assigned_user_id, submission_type, due_date").eq("id", taskId)
+    .maybeSingle<{ id: string; major: string | null; assigned_user_id: string | null; submission_type: SubmissionType | null; due_date: string | null }>();
   if (!task) notFound();
+
+  // Due date enforcement — reject submissions past the deadline
+  if (task.due_date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(task.due_date + "T00:00:00");
+    due.setHours(0, 0, 0, 0);
+    if (today > due) {
+      redirect(`${redirectBase}?error=submission-deadline-has-passed`);
+    }
+  }
   const canAccessTask =
     task.assigned_user_id === user.id ||
     (!task.assigned_user_id && !!task.major && !!profile.major && task.major === profile.major);
@@ -144,8 +163,8 @@ async function saveSubmission(formData: FormData) {
   const validationError = validateSubmissionByType({ submissionType: task.submission_type, content, linkUrl, uploadedFile });
   if (validationError) redirect(`${redirectBase}?error=${validationError}`);
   const { data: existingSubmission } = await supabase
-    .from("submissions").select("id, file_path").eq("task_id", taskId).eq("user_id", user.id)
-    .maybeSingle<{ id: string; file_path: string | null }>();
+    .from("submissions").select("id, file_path, version").eq("task_id", taskId).eq("user_id", user.id)
+    .maybeSingle<{ id: string; file_path: string | null; version: number | null }>();
   let file_name: string | null = null;
   let file_path: string | null = existingSubmission?.file_path ?? null;
   let file_url: string | null = null;
@@ -207,10 +226,11 @@ async function saveSubmission(formData: FormData) {
     submitted_at: new Date().toISOString(),
   };
   if (existingSubmission) {
-    const { error } = await supabase.from("submissions").update(payload).eq("id", existingSubmission.id);
+    const nextVersion = (existingSubmission.version ?? 1) + 1;
+    const { error } = await supabase.from("submissions").update({ ...payload, version: nextVersion }).eq("id", existingSubmission.id);
     if (error) redirect(`${redirectBase}?error=${encodeURIComponent(error.message)}`);
   } else {
-    const { error } = await supabase.from("submissions").insert({ task_id: taskId, user_id: user.id, ...payload });
+    const { error } = await supabase.from("submissions").insert({ task_id: taskId, user_id: user.id, ...payload, version: 1 });
     if (error) redirect(`${redirectBase}?error=${encodeURIComponent(error.message)}`);
   }
   revalidatePath(`/tasks/${taskId}`);
@@ -218,6 +238,16 @@ async function saveSubmission(formData: FormData) {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
   revalidatePath("/admin/tasks");
+
+  // Fire-and-forget audit log
+  await logAudit({
+    userId: user.id,
+    action: existingSubmission ? "submission.updated" : "submission.created",
+    entityType: "submission",
+    entityId: taskId,
+    metadata: { task_id: taskId },
+  });
+
   redirect(`/tasks/${taskId}?success=submission-saved`);
 }
 
@@ -249,7 +279,7 @@ export default async function SubmitTaskPage({ params, searchParams }: PageProps
 
   const { data: existingSubmission } = await supabase
     .from("submissions")
-    .select("id, user_id, task_id, content, link_url, file_name, file_path, file_url, file_type, file_size, submitted_at, admin_feedback, reviewed_at, reviewed_by")
+    .select("id, user_id, task_id, content, link_url, file_name, file_path, file_url, file_type, file_size, submitted_at, admin_feedback, reviewed_at, reviewed_by, version")
     .eq("task_id", task.id).eq("user_id", user.id)
     .maybeSingle<SubmissionRow>();
 
@@ -318,6 +348,12 @@ export default async function SubmitTaskPage({ params, searchParams }: PageProps
                   <p className="font-medium text-slate-900">Last submitted</p>
                   <p className="mt-0.5 text-slate-500">{formatDate(existingSubmission.submitted_at)}</p>
                 </div>
+                {existingSubmission.version && existingSubmission.version > 1 && (
+                  <div>
+                    <p className="font-medium text-slate-900">Version</p>
+                    <p className="mt-0.5 text-slate-500">v{existingSubmission.version}</p>
+                  </div>
+                )}
                 <div>
                   <p className="font-medium text-slate-900">Review status</p>
                   <p className="mt-0.5 text-slate-500">

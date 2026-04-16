@@ -252,6 +252,23 @@ export default async function DashboardPage({
     } catch { /* due_date column may not exist yet */ }
   }
 
+  // Active cohort for students
+  type CohortInfo = { id: string; name: string; start_date: string | null; end_date: string | null };
+  let activeCohort: CohortInfo | null = null;
+  if (!isStaff && userMajor) {
+    try {
+      const { data: cohortData } = await supabase
+        .from("cohorts")
+        .select("id, name, start_date, end_date")
+        .eq("major", userMajor)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .returns<CohortInfo[]>();
+      activeCohort = cohortData?.[0] ?? null;
+    } catch { /* table may not exist yet */ }
+  }
+
   // Pending submissions count for staff panels
   let pendingReviews = 0;
   if (isStaff) {
@@ -590,6 +607,32 @@ export default async function DashboardPage({
 
               </CardContent>
             </Card>
+          </section>
+        )}
+
+        {/* Active Cohort — students only */}
+        {!isStaff && activeCohort && (
+          <section>
+            <div className="rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-6 py-5 shadow-sm flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white text-lg">
+                  🎓
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">Current Cohort</p>
+                  <p className="text-base font-bold text-slate-900">{activeCohort.name}</p>
+                  {activeCohort.start_date && (
+                    <p className="text-xs text-slate-500">
+                      {new Date(activeCohort.start_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      {activeCohort.end_date && ` → ${new Date(activeCohort.end_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <span className="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
+                Active
+              </span>
+            </div>
           </section>
         )}
 

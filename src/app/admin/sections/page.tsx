@@ -1,5 +1,5 @@
 import { getSectionsForStaff } from "@/actions/sections";
-import { requireStaff, getMajorFilter } from "@/lib/auth";
+import { requireStaff, getMajorFilter, getMajorLabel } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getMajorNames } from "@/lib/majors-db";
 import SectionFormDialog from "@/components/admin/SectionFormDialog";
@@ -24,19 +24,19 @@ export default async function AdminSectionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600 mb-1">
-            {isManager ? `Manager — ${profile.assigned_major ?? ""}` : "Super Admin"}
+            {isManager ? `Manager — ${getMajorLabel(profile)}` : "Super Admin"}
           </p>
           <h1 className="text-2xl font-bold text-gray-900">Sections</h1>
           <p className="text-sm text-gray-500 mt-1">
             {isManager
-              ? `Manage sections for ${profile.assigned_major ?? "your major"}.`
+              ? `Manage sections for ${getMajorLabel(profile) || "your major"}.`
               : "Manage all course sections across every major."}
           </p>
         </div>
         <SectionFormDialog
           mode="create"
-          restrictedMajor={majorFilter ?? undefined}
-          availableMajors={majorNames}
+          restrictedMajor={majorFilter !== null && majorFilter.length === 1 ? majorFilter[0] : undefined}
+          availableMajors={majorFilter !== null && majorFilter.length > 0 ? majorFilter : majorNames}
         />
       </div>
 
@@ -46,7 +46,7 @@ export default async function AdminSectionsPage() {
           { label: "Total Tasks", value: totalTasks },
           {
             label: isManager ? "Your Major" : "Unique Majors",
-            value: isManager ? (profile.assigned_major ?? "—") : uniqueMajors,
+            value: isManager ? (getMajorLabel(profile) || "—") : uniqueMajors,
           },
         ].map((stat) => (
           <div
@@ -64,8 +64,8 @@ export default async function AdminSectionsPage() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <SectionAdminTable
           sections={sections}
-          restrictedMajor={majorFilter ?? undefined}
-          availableMajors={majorNames}
+          restrictedMajor={majorFilter !== null && majorFilter.length === 1 ? majorFilter[0] : undefined}
+          availableMajors={majorFilter !== null && majorFilter.length > 0 ? majorFilter : majorNames}
         />
       </div>
     </div>

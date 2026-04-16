@@ -5,6 +5,13 @@ import { revalidatePath } from "next/cache";
 
 // ─── Internal auth helper ──────────────────────────────────────────────────────
 // Returns the current user's staff profile, or throws if not staff.
+type InternalStaffProfile = {
+  id: string;
+  role: string;
+  assigned_major: string | null;
+  assigned_majors: string[] | null;
+};
+
 async function getStaffProfile() {
   const supabase = await createClient();
   const {
@@ -14,9 +21,9 @@ async function getStaffProfile() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, role, assigned_major")
+    .select("id, role, assigned_major, assigned_majors")
     .eq("id", user.id)
-    .maybeSingle<{ id: string; role: string; assigned_major: string | null }>();
+    .maybeSingle<InternalStaffProfile>();
 
   if (!profile || (profile.role !== "admin" && profile.role !== "manager")) {
     throw new Error("Unauthorized");
@@ -25,19 +32,20 @@ async function getStaffProfile() {
   return { supabase, profile };
 }
 
+function getAllowedMajors(profile: InternalStaffProfile): string[] {
+  if (profile.assigned_majors && profile.assigned_majors.length > 0) {
+    return profile.assigned_majors;
+  }
+  if (profile.assigned_major) return [profile.assigned_major];
+  return [];
+}
+
 // ─── Validate major access for managers ───────────────────────────────────────
-function assertMajorAccess(
-  profile: { role: string; assigned_major: string | null },
-  major: string
-) {
-  if (
-    profile.role === "manager" &&
-    profile.assigned_major &&
-    major !== profile.assigned_major
-  ) {
-    throw new Error(
-      `You can only manage sections for your assigned major (${profile.assigned_major}).`
-    );
+function assertMajorAccess(profile: InternalStaffProfile, major: string) {
+  if (profile.role !== "manager") return;
+  const allowed = getAllowedMajors(profile);
+  if (allowed.length > 0 && !allowed.includes(major)) {
+    throw new Error(`You can only manage sections for your assigned major(s).`);
   }
 }
 
@@ -66,8 +74,11 @@ export async function getSectionsForStaff() {
     .select("*, tasks(count)")
     .order("created_at", { ascending: false });
 
-  if (profile.role === "manager" && profile.assigned_major) {
-    query = query.eq("major", profile.assigned_major);
+  if (profile.role === "manager") {
+    const majors = getAllowedMajors(profile);
+    if (majors.length > 0) {
+      query = query.in("major", majors);
+    }
   }
 
   const { data, error } = await query;
@@ -104,9 +115,9 @@ export async function getSectionWithTasks(id: string) {
 
   const { data: tasks } = await supabase
     .from("tasks")
-    .select("id, title, description, status, major, assignment_type, submission_type")
+    .select("id, title, description, status, major, assignment_type, submission_type, order_index")
     .eq("section_id", id)
-    .order("created_at", { ascending: true });
+    .order("order_index", { ascending: true, nullsFirst: true });
 
   return { section, tasks: tasks ?? [] };
 }

@@ -11,7 +11,7 @@ export default async function Navbar() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let role: "student" | "manager" | "admin" | null = null;
+  let role: "student" | "manager" | "admin" | "company" | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
@@ -43,11 +43,13 @@ export default async function Navbar() {
     { href: "/admin/students", label: "Students" },
   ];
 
-  // Super admin gets manager management + majors on top
+  // Super admin gets manager management + majors + cohorts + audit log
   const adminLinks = [
     ...staffBaseLinks,
     { href: "/admin/managers", label: "Managers" },
     { href: "/admin/majors", label: "Majors" },
+    { href: "/admin/cohorts", label: "Cohorts" },
+    { href: "/admin/audit-log", label: "Audit Log" },
   ];
 
   const companyLinks = [

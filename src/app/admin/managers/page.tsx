@@ -3,10 +3,15 @@ import { redirect } from "next/navigation";
 import { requireSuperAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getMajorNames } from "@/lib/majors-db";
+import { logAudit } from "@/lib/audit";
 
 export const metadata = { title: "Manage Managers | GradFolio" };
 
 type SearchParams = Promise<{ success?: string; error?: string }>;
+
+// ─── DB migration required ────────────────────────────────────────────────────
+// ALTER TABLE profiles ADD COLUMN IF NOT EXISTS assigned_majors text[];
+// ─────────────────────────────────────────────────────────────────────────────
 
 type ProfileRow = {
   id: string;
@@ -14,67 +19,78 @@ type ProfileRow = {
   role: string;
   major: string | null;
   assigned_major: string | null;
+  assigned_majors: string[] | null;
 };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
 async function promoteToManager(formData: FormData) {
   "use server";
-  const { supabase } = await requireSuperAdmin();
+  const { supabase, user } = await requireSuperAdmin();
   const userId = String(formData.get("user_id") || "").trim();
-  const assignedMajor = String(formData.get("assigned_major") || "").trim();
+  const assignedMajors = formData.getAll("assigned_majors").map(String).filter(Boolean);
 
-  if (!userId || !assignedMajor) redirect("/admin/managers?error=missing-fields");
+  if (!userId || assignedMajors.length === 0) redirect("/admin/managers?error=missing-fields");
   const validMajors = await getMajorNames(supabase);
-  if (!validMajors.includes(assignedMajor))
+  if (!assignedMajors.every((m) => validMajors.includes(m)))
     redirect("/admin/managers?error=invalid-major");
 
   const { error } = await supabase
     .from("profiles")
-    .update({ role: "manager", assigned_major: assignedMajor })
+    .update({
+      role: "manager",
+      assigned_major: assignedMajors[0], // legacy compat
+      assigned_majors: assignedMajors,
+    })
     .eq("id", userId);
 
   if (error) redirect(`/admin/managers?error=${encodeURIComponent(error.message)}`);
+  await logAudit({ userId: user.id, action: "role.promoted_manager", entityType: "profile", entityId: userId, metadata: { assigned_majors: assignedMajors } });
   revalidatePath("/admin/managers");
   revalidatePath("/dashboard");
   redirect("/admin/managers?success=promoted-to-manager");
 }
 
-async function updateManagerMajor(formData: FormData) {
+async function updateManagerMajors(formData: FormData) {
   "use server";
-  const { supabase } = await requireSuperAdmin();
+  const { supabase, user } = await requireSuperAdmin();
   const userId = String(formData.get("user_id") || "").trim();
-  const assignedMajor = String(formData.get("assigned_major") || "").trim();
+  const assignedMajors = formData.getAll("assigned_majors").map(String).filter(Boolean);
 
-  if (!userId || !assignedMajor) redirect("/admin/managers?error=missing-fields");
+  if (!userId || assignedMajors.length === 0) redirect("/admin/managers?error=missing-fields");
   const validMajors = await getMajorNames(supabase);
-  if (!validMajors.includes(assignedMajor))
+  if (!assignedMajors.every((m) => validMajors.includes(m)))
     redirect("/admin/managers?error=invalid-major");
 
   const { error } = await supabase
     .from("profiles")
-    .update({ assigned_major: assignedMajor })
+    .update({
+      assigned_major: assignedMajors[0], // legacy compat
+      assigned_majors: assignedMajors,
+    })
     .eq("id", userId)
     .eq("role", "manager");
 
   if (error) redirect(`/admin/managers?error=${encodeURIComponent(error.message)}`);
+  await logAudit({ userId: user.id, action: "role.updated_manager_majors", entityType: "profile", entityId: userId, metadata: { assigned_majors: assignedMajors } });
   revalidatePath("/admin/managers");
-  redirect("/admin/managers?success=major-updated");
+  redirect("/admin/managers?success=majors-updated");
 }
 
 async function demoteManager(formData: FormData) {
   "use server";
-  const { supabase } = await requireSuperAdmin();
+  const { supabase, user } = await requireSuperAdmin();
   const userId = String(formData.get("user_id") || "").trim();
 
   if (!userId) redirect("/admin/managers?error=missing-user-id");
 
   const { error } = await supabase
     .from("profiles")
-    .update({ role: "student", assigned_major: null })
+    .update({ role: "student", assigned_major: null, assigned_majors: null })
     .eq("id", userId);
 
   if (error) redirect(`/admin/managers?error=${encodeURIComponent(error.message)}`);
+  await logAudit({ userId: user.id, action: "role.demoted_to_student", entityType: "profile", entityId: userId });
   revalidatePath("/admin/managers");
   revalidatePath("/dashboard");
   redirect("/admin/managers?success=demoted-to-student");
@@ -104,7 +120,7 @@ export default async function AdminManagersPage({
   // Fetch current managers
   const { data: managers } = await supabase
     .from("profiles")
-    .select("id, full_name, role, major, assigned_major")
+    .select("id, full_name, role, major, assigned_major, assigned_majors")
     .eq("role", "manager")
     .order("full_name", { ascending: true })
     .returns<ProfileRow[]>();
@@ -112,7 +128,7 @@ export default async function AdminManagersPage({
   // Fetch students available for promotion
   const { data: students } = await supabase
     .from("profiles")
-    .select("id, full_name, role, major, assigned_major")
+    .select("id, full_name, role, major, assigned_major, assigned_majors")
     .eq("role", "student")
     .order("full_name", { ascending: true })
     .returns<ProfileRow[]>();
@@ -140,7 +156,7 @@ export default async function AdminManagersPage({
           <div className="mt-5 grid gap-4 sm:grid-cols-3">
             {[
               { label: "Managers", value: managers?.length ?? 0 },
-              { label: "Majors covered", value: new Set(managers?.map((m) => m.assigned_major).filter(Boolean)).size },
+              { label: "Majors covered", value: new Set(managers?.flatMap((m) => m.assigned_majors?.length ? m.assigned_majors : m.assigned_major ? [m.assigned_major] : []).filter(Boolean)).size },
               { label: "Students", value: students?.length ?? 0 },
             ].map((stat) => (
               <div
@@ -201,7 +217,9 @@ export default async function AdminManagersPage({
                         {manager.full_name || `User ${manager.id.slice(0, 8)}`}
                       </p>
                       <p className="text-xs text-slate-400">
-                        {manager.assigned_major
+                        {(manager.assigned_majors?.length ?? 0) > 0
+                          ? `Assigned to: ${manager.assigned_majors!.join(", ")}`
+                          : manager.assigned_major
                           ? `Assigned to: ${manager.assigned_major}`
                           : "No major assigned"}
                       </p>
@@ -212,24 +230,34 @@ export default async function AdminManagersPage({
                   </div>
 
                   <div className="flex flex-wrap gap-3">
-                    {/* Change major */}
-                    <form action={updateManagerMajor} className="flex gap-2 flex-1">
+                    {/* Change major(s) — multi-select checkboxes */}
+                    <form action={updateManagerMajors} className="flex-1">
                       <input type="hidden" name="user_id" value={manager.id} />
-                      <select
-                        name="assigned_major"
-                        defaultValue={manager.assigned_major ?? ""}
-                        className={`${inputClass} flex-1`}
-                      >
-                        <option value="">Select a major</option>
-                        {majorNames.map((name) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
+                      <p className="mb-2 text-xs font-medium text-slate-500 uppercase tracking-wider">Assigned Majors</p>
+                      <div className="mb-3 grid gap-1.5 sm:grid-cols-2">
+                        {majorNames.map((name) => {
+                          const effectiveMajors = manager.assigned_majors?.length
+                            ? manager.assigned_majors
+                            : manager.assigned_major ? [manager.assigned_major] : [];
+                          return (
+                            <label key={name} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50">
+                              <input
+                                type="checkbox"
+                                name="assigned_majors"
+                                value={name}
+                                defaultChecked={effectiveMajors.includes(name)}
+                                className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                              />
+                              {name}
+                            </label>
+                          );
+                        })}
+                      </div>
                       <button
                         type="submit"
-                        className="shrink-0 inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+                        className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
                       >
-                        Update
+                        Update Majors
                       </button>
                     </form>
 
@@ -268,31 +296,36 @@ export default async function AdminManagersPage({
             </div>
           ) : (
             <form action={promoteToManager} className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Student
-                  </label>
-                  <select name="user_id" required className={inputClass}>
-                    <option value="">Select a student</option>
-                    {students.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.full_name || `User ${student.id.slice(0, 8)}`}
-                        {student.major ? ` — ${student.major}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Assign Major
-                  </label>
-                  <select name="assigned_major" required className={inputClass}>
-                    <option value="">Select a major</option>
-                    {majorNames.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Student
+                </label>
+                <select name="user_id" required className={inputClass}>
+                  <option value="">Select a student</option>
+                  {students.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.full_name || `User ${student.id.slice(0, 8)}`}
+                      {student.major ? ` — ${student.major}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Assign Major(s) <span className="font-normal text-slate-400">(select one or more)</span>
+                </label>
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  {majorNames.map((name) => (
+                    <label key={name} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 transition hover:bg-white">
+                      <input
+                        type="checkbox"
+                        name="assigned_majors"
+                        value={name}
+                        className="h-4 w-4 rounded border-slate-300 text-violet-600"
+                      />
+                      {name}
+                    </label>
+                  ))}
                 </div>
               </div>
 

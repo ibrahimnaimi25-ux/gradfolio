@@ -313,10 +313,11 @@ export default async function AdminSubmissionsPage({
   const isManager = profile.role === "manager";
   const supabase = await createClient();
 
-  // ── Fetch tasks (scoped by major for managers) ───────────────────────────────
+  // ── Fetch tasks (scoped by major for managers; exclude company tasks) ──────────
   let tasksQuery = supabase
     .from("tasks")
-    .select("id, title, major, section_id, submission_type");
+    .select("id, title, major, section_id, submission_type")
+    .is("company_id", null); // exclude company-owned tasks from admin review
   if (majorFilter !== null && majorFilter.length > 0) tasksQuery = tasksQuery.in("major", majorFilter);
   const { data: tasksRaw } = await tasksQuery.returns<TaskRow[]>();
 

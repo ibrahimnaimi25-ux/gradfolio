@@ -55,6 +55,7 @@ export default async function Navbar() {
   const companyLinks = [
     { href: "/", label: "Home" },
     { href: "/company/setup", label: "Dashboard" },
+    { href: "/company/tasks", label: "My Tasks" },
     { href: "/discover", label: "Discover Talent" },
   ];
 

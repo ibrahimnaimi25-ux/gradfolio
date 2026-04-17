@@ -269,6 +269,73 @@ export default async function DashboardPage({
     } catch { /* table may not exist yet */ }
   }
 
+  // Company task feedback for students
+  type CompanyTaskFeedback = {
+    submission_id: string;
+    task_title: string;
+    company_name: string | null;
+    status: string | null;
+    score: number | null;
+    feedback: string | null;
+    reviewed_at: string;
+  };
+  let companyTaskFeedback: CompanyTaskFeedback[] = [];
+  if (!isStaff) {
+    try {
+      // Get student's submissions for company tasks
+      const { data: compSubData } = await supabase
+        .from("submissions")
+        .select("id, task_id")
+        .eq("user_id", user.id)
+        .returns<{ id: string; task_id: string }[]>();
+
+      const compSubList = compSubData ?? [];
+      if (compSubList.length > 0) {
+        const subIds = compSubList.map((s) => s.id);
+        // Get company reviews for those submissions
+        const { data: reviewData } = await supabase
+          .from("company_submission_reviews")
+          .select("submission_id, status, score, feedback, reviewed_at, company_user_id")
+          .in("submission_id", subIds)
+          .order("reviewed_at", { ascending: false })
+          .limit(5)
+          .returns<{ submission_id: string; status: string | null; score: number | null; feedback: string | null; reviewed_at: string; company_user_id: string }[]>();
+
+        if (reviewData && reviewData.length > 0) {
+          const taskIds = compSubList.map((s) => s.task_id);
+          const companyIds = reviewData.map((r) => r.company_user_id);
+
+          const [{ data: taskTitles }, { data: companyProfiles }] = await Promise.all([
+            supabase
+              .from("tasks")
+              .select("id, title")
+              .in("id", taskIds)
+              .returns<{ id: string; title: string }[]>(),
+            supabase
+              .from("profiles")
+              .select("id, company_name")
+              .in("id", companyIds)
+              .returns<{ id: string; company_name: string | null }[]>(),
+          ]);
+
+          const taskTitleMap = Object.fromEntries((taskTitles ?? []).map((t) => [t.id, t.title]));
+          const companyNameMap = Object.fromEntries((companyProfiles ?? []).map((p) => [p.id, p.company_name]));
+          const subTaskMap = Object.fromEntries(compSubList.map((s) => [s.id, s.task_id]));
+
+          companyTaskFeedback = reviewData.map((r) => ({
+            submission_id: r.submission_id,
+            task_title: taskTitleMap[subTaskMap[r.submission_id]] ?? "Task",
+            company_name: companyNameMap[r.company_user_id] ?? null,
+            status: r.status,
+            score: r.score,
+            feedback: r.feedback,
+            reviewed_at: r.reviewed_at,
+          }));
+        }
+      }
+    } catch { /* company tables may not exist yet */ }
+  }
+
   // Pending submissions count for staff panels
   let pendingReviews = 0;
   if (isStaff) {
@@ -820,6 +887,66 @@ export default async function DashboardPage({
                 <p className="mt-3 text-xs text-slate-400">
                   Make sure your profile is complete and your best work is submitted to stand out.
                 </p>
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
+        {/* Company Task Feedback — students only, shown when companies have reviewed */}
+        {!isStaff && companyTaskFeedback.length > 0 && (
+          <section>
+            <Card className="rounded-3xl border-amber-100">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-lg shrink-0">
+                    🏢
+                  </div>
+                  <div>
+                    <CardTitle>Company Task Feedback</CardTitle>
+                    <CardDescription className="mt-0.5">
+                      Companies have reviewed your submissions on their tasks.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2.5">
+                  {companyTaskFeedback.map((fb) => {
+                    const statusCfg: Record<string, { label: string; cls: string }> = {
+                      reviewing:   { label: "Reviewing",   cls: "bg-sky-50 text-sky-700" },
+                      shortlisted: { label: "Shortlisted ⭐", cls: "bg-amber-50 text-amber-700" },
+                      hired:       { label: "Hired 🎉",    cls: "bg-emerald-50 text-emerald-700" },
+                      rejected:    { label: "Not selected", cls: "bg-slate-100 text-slate-500" },
+                    };
+                    const cfg = statusCfg[fb.status ?? "reviewing"] ?? statusCfg.reviewing;
+                    return (
+                      <div
+                        key={fb.submission_id}
+                        className="rounded-2xl border border-amber-100 bg-amber-50/40 px-4 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">
+                              {fb.task_title}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              {fb.company_name ?? "A company"}
+                              {fb.score ? ` · ${"★".repeat(fb.score)}${"☆".repeat(5 - fb.score)}` : ""}
+                            </p>
+                          </div>
+                          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.cls}`}>
+                            {cfg.label}
+                          </span>
+                        </div>
+                        {fb.feedback && (
+                          <p className="mt-2 text-xs text-slate-500 italic line-clamp-2">
+                            &ldquo;{fb.feedback}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
           </section>

@@ -129,6 +129,21 @@ async function expressInterest(formData: FormData) {
     { onConflict: "company_user_id,student_id" }
   );
 
+  // Notify the student
+  const { createNotification } = await import("@/lib/notifications");
+  const { data: companyProfile } = await supabase
+    .from("profiles")
+    .select("company_name")
+    .eq("id", user.id)
+    .maybeSingle<{ company_name: string | null }>();
+  await createNotification(supabase, {
+    userId: studentId,
+    type: "company_interest",
+    title: `${companyProfile?.company_name ?? "A company"} is interested in you`,
+    body: message ? message.slice(0, 140) : null,
+    link: "/dashboard",
+  });
+
   revalidatePath(`/students/${studentId}`);
   redirect(`/students/${studentId}?interested=1`);
 }
@@ -309,6 +324,55 @@ export default async function StudentPortfolioPage({
   const uniqueMajors = Array.from(
     new Set(submissions.map((s) => s.tasks?.major).filter(Boolean))
   ) as string[];
+
+  // Section completion progress in student's own major (public-facing)
+  type SectionProgressItem = {
+    id: string;
+    name: string;
+    done: number;
+    total: number;
+  };
+  let sectionProgressList: SectionProgressItem[] = [];
+  try {
+    if (profile.major) {
+      const { data: majorSections } = await supabase
+        .from("sections")
+        .select("id, name")
+        .eq("major", profile.major)
+        .order("order_index", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: true })
+        .returns<{ id: string; name: string }[]>();
+
+      const mSections = majorSections ?? [];
+      if (mSections.length > 0) {
+        const { data: openTasks } = await supabase
+          .from("tasks")
+          .select("id, section_id")
+          .in(
+            "section_id",
+            mSections.map((s) => s.id)
+          )
+          .eq("status", "open")
+          .returns<{ id: string; section_id: string }[]>();
+
+        const bySection: Record<string, Set<string>> = {};
+        for (const t of openTasks ?? []) {
+          (bySection[t.section_id] ||= new Set()).add(t.id);
+        }
+
+        const submittedTaskIds = new Set(submissions.map((s) => s.task_id));
+
+        sectionProgressList = mSections.map((s) => {
+          const ids = bySection[s.id] ?? new Set();
+          const total = ids.size;
+          const done = [...ids].filter((id) => submittedTaskIds.has(id)).length;
+          return { id: s.id, name: s.name, done, total };
+        });
+      }
+    }
+  } catch {
+    // tables may not exist yet
+  }
 
   const firstName = profile.full_name?.split(" ")[0] ?? "Student";
 
@@ -566,6 +630,53 @@ export default async function StudentPortfolioPage({
             </div>
           </div>
         </section>
+
+        {/* Section progress */}
+        {sectionProgressList.length > 0 && (
+          <section className="mt-6 rounded-3xl border border-black/5 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-900">
+                Curriculum progress
+              </h2>
+              <p className="text-xs text-slate-400">
+                {profile.major ?? "Major"} · sections
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {sectionProgressList.map((s) => {
+                const pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
+                const allDone = s.total > 0 && s.done === s.total;
+                return (
+                  <div
+                    key={s.id}
+                    className={`rounded-2xl border p-4 ${
+                      allDone
+                        ? "border-emerald-100 bg-emerald-50/40"
+                        : "border-slate-100 bg-slate-50"
+                    }`}
+                  >
+                    <h3 className="text-sm font-semibold text-slate-900">{s.name}</h3>
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full border border-slate-200/60 bg-white/80">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          allDone ? "bg-emerald-500" : "bg-indigo-400"
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      {s.total === 0
+                        ? "No tasks yet"
+                        : allDone
+                        ? `✓ All ${s.total} complete`
+                        : `${s.done} / ${s.total} · ${pct}%`}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Completed work */}
         <section className="mt-6">

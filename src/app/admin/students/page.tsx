@@ -1,6 +1,9 @@
 import { requireStaff, getMajorFilter } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import Pagination from "@/components/pagination";
+
+const PAGE_SIZE = 20;
 
 export const metadata = { title: "Student Directory | GradFolio" };
 
@@ -10,6 +13,7 @@ type SearchParams = Promise<{
   q?: string;
   major?: string;
   sort?: string;
+  page?: string;
 }>;
 
 type StudentRow = {
@@ -105,6 +109,7 @@ export default async function AdminStudentsPage({
   const q = (params.q ?? "").toLowerCase().trim();
   const majorFilter = params.major ?? "";
   const sort = params.sort ?? "name";
+  const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
 
   const { profile } = await requireStaff();
   const staffMajorFilter = getMajorFilter(profile);
@@ -207,18 +212,29 @@ export default async function AdminStudentsPage({
   const withResume = enriched.filter((s) => s.resume_url).length;
   const fullyComplete = enriched.filter((s) => s.completeness === 100).length;
 
+  // ── Pagination ───────────────────────────────────────────────────────────────
+  const totalItems = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paged = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   // ── URL helpers ──────────────────────────────────────────────────────────────
   function buildUrl(overrides: Record<string, string>) {
     const p = new URLSearchParams();
     if (q) p.set("q", q);
     if (majorFilter) p.set("major", majorFilter);
     if (sort !== "name") p.set("sort", sort);
+    if (safePage > 1) p.set("page", String(safePage));
     for (const [k, v] of Object.entries(overrides)) {
       if (v) p.set(k, v);
       else p.delete(k);
     }
     const s = p.toString();
     return `/admin/students${s ? `?${s}` : ""}`;
+  }
+
+  function buildPageHref(page: number) {
+    return buildUrl({ page: page > 1 ? String(page) : "" });
   }
 
   const inputClass =
@@ -330,7 +346,7 @@ export default async function AdminStudentsPage({
         </section>
 
         {/* ── Results ────────────────────────────────────────────────────────── */}
-        {sorted.length === 0 ? (
+        {totalItems === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white py-24 text-center">
             <div className="mb-4 text-4xl">🎓</div>
             <h3 className="text-base font-semibold text-slate-800">
@@ -350,13 +366,15 @@ export default async function AdminStudentsPage({
           </div>
         ) : (
           <>
-            {/* Result count */}
-            <p className="text-sm text-slate-500 px-1">
-              Showing <strong className="text-slate-700">{sorted.length}</strong>{" "}
-              {sorted.length === 1 ? "student" : "students"}
-              {q && ` matching "${q}"`}
-              {majorFilter && ` in ${majorFilter}`}
-            </p>
+            {/* Top pagination */}
+            <Pagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={PAGE_SIZE}
+              buildHref={buildPageHref}
+              itemLabel={totalItems === 1 ? "student" : "students"}
+            />
 
             {/* Table — desktop */}
             <div className="hidden md:block rounded-3xl border border-slate-100 bg-white overflow-hidden shadow-sm">
@@ -393,7 +411,7 @@ export default async function AdminStudentsPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {sorted.map((student) => (
+                  {paged.map((student) => (
                     <tr
                       key={student.id}
                       className="group transition-colors hover:bg-slate-50/60"
@@ -505,7 +523,7 @@ export default async function AdminStudentsPage({
 
             {/* Cards — mobile */}
             <div className="space-y-3 md:hidden">
-              {sorted.map((student) => (
+              {paged.map((student) => (
                 <div
                   key={student.id}
                   className="rounded-2xl border border-slate-100 bg-white p-5 space-y-4"
@@ -561,6 +579,16 @@ export default async function AdminStudentsPage({
                 </div>
               ))}
             </div>
+
+            {/* Bottom pagination */}
+            <Pagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={PAGE_SIZE}
+              buildHref={buildPageHref}
+              itemLabel={totalItems === 1 ? "student" : "students"}
+            />
           </>
         )}
 

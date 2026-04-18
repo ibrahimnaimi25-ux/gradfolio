@@ -4,7 +4,10 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireStaff, getMajorFilter, getMajorLabel } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import Pagination from "@/components/pagination";
 import { MajorSectionSelect } from "@/components/admin/MajorSectionSelect";
+
+const PAGE_SIZE = 20;
 import { getMajorNames } from "@/lib/majors-db";
 import { TASK_STATUS_CLASSES, SUBMISSION_TYPE_LABELS } from "@/lib/constants";
 import type { SubmissionType } from "@/lib/constants";
@@ -14,6 +17,7 @@ type SearchParams = Promise<{
   taskStatus?: string;
   success?: string;
   error?: string;
+  page?: string;
 }>;
 
 type ProfileRow = {
@@ -47,9 +51,17 @@ type TaskRow = {
   submission_type: SubmissionType | null;
   assigned_user_id: string | null;
   section_id: string | null;
+  cohort_id: string | null;
   created_at: string;
   due_date: string | null;
   order_index: number | null;
+};
+
+type CohortRow = {
+  id: string;
+  name: string;
+  major: string;
+  status: "active" | "archived";
 };
 
 type UserMap = Record<string, { full_name: string | null; major: string | null }>;
@@ -122,6 +134,7 @@ async function createTask(formData: FormData) {
   const major = String(formData.get("major") || "").trim();
   const assignedUserId = String(formData.get("assigned_user_id") || "").trim();
   const sectionId = String(formData.get("section_id") || "").trim() || null;
+  const cohortId = String(formData.get("cohort_id") || "").trim() || null;
   const dueDate = String(formData.get("due_date") || "").trim() || null;
 
   if (!title) redirect("/admin/tasks?error=missing-title#create-task");
@@ -146,6 +159,7 @@ async function createTask(formData: FormData) {
     assigned_user_id: assignmentType === "direct" ? (assignedUserId || null) : null,
     created_by: user.id,
     section_id: sectionId,
+    cohort_id: cohortId,
     due_date: dueDate,
   };
 
@@ -173,6 +187,7 @@ async function updateTask(formData: FormData) {
   const major = String(formData.get("major") || "").trim();
   const assignedUserId = String(formData.get("assigned_user_id") || "").trim();
   const sectionId = String(formData.get("section_id") || "").trim() || null;
+  const cohortId = String(formData.get("cohort_id") || "").trim() || null;
   const dueDate = String(formData.get("due_date") || "").trim() || null;
 
   if (!taskId) redirect("/admin/tasks?error=missing-task-id#manage-tasks");
@@ -196,6 +211,7 @@ async function updateTask(formData: FormData) {
     major: assignmentType === "major" ? (major || null) : null,
     assigned_user_id: assignmentType === "direct" ? (assignedUserId || null) : null,
     section_id: sectionId,
+    cohort_id: cohortId,
     due_date: dueDate,
   };
 
@@ -306,6 +322,7 @@ export default async function AdminTasksPage({
   const params = await searchParams;
   const q = (params.q || "").trim().toLowerCase();
   const taskStatus = typeof params.taskStatus === "string" ? params.taskStatus : "all";
+  const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const successMessage = typeof params.success === "string" ? decodeMessage(params.success) : null;
   const errorMessage = typeof params.error === "string" ? decodeMessage(params.error) : null;
 
@@ -330,11 +347,28 @@ export default async function AdminTasksPage({
   if (majorFilter !== null && majorFilter.length > 0) studentsQuery = studentsQuery.in("major", majorFilter);
   const { data: students } = await studentsQuery.returns<StudentRow[]>();
 
+  // Active cohorts (scoped by manager's majors)
+  let cohorts: CohortRow[] = [];
+  try {
+    let cohortsQuery = supabase
+      .from("cohorts")
+      .select("id, name, major, status")
+      .eq("status", "active")
+      .order("major", { ascending: true })
+      .order("name", { ascending: true });
+    if (majorFilter !== null && majorFilter.length > 0) cohortsQuery = cohortsQuery.in("major", majorFilter);
+    const { data } = await cohortsQuery.returns<CohortRow[]>();
+    cohorts = data ?? [];
+  } catch {
+    cohorts = [];
+  }
+
   let tasksQuery = supabase
     .from("tasks")
     .select(
-      "id, title, description, major, status, assignment_type, submission_type, assigned_user_id, section_id, created_at, due_date, order_index"
+      "id, title, description, major, status, assignment_type, submission_type, assigned_user_id, section_id, cohort_id, created_at, due_date, order_index"
     )
+    .is("company_id", null)  // exclude company-owned tasks from admin view
     .order("order_index", { ascending: true, nullsFirst: true });
   if (majorFilter !== null && majorFilter.length > 0) tasksQuery = tasksQuery.in("major", majorFilter);
   const { data: tasksRaw } = await tasksQuery.returns<TaskRow[]>();
@@ -401,6 +435,21 @@ export default async function AdminTasksPage({
     const matchesStatus = taskStatus === "all" || normalizedStatus === taskStatus;
     return matchesSearch && matchesStatus;
   });
+
+  // Pagination
+  const totalFiltered = filteredTasks.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedTasks = filteredTasks.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function buildTaskPageHref(page: number) {
+    const p = new URLSearchParams();
+    if (params.q) p.set("q", params.q);
+    if (taskStatus !== "all") p.set("taskStatus", taskStatus);
+    if (page > 1) p.set("page", String(page));
+    const s = p.toString();
+    return `/admin/tasks${s ? `?${s}` : ""}#manage-tasks`;
+  }
 
   const inputClass =
     "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900";
@@ -629,6 +678,33 @@ export default async function AdminTasksPage({
                   ))}
                 </select>
               </div>
+              <div>
+                <label htmlFor="cohort_id" className={labelClass}>
+                  Cohort <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <select
+                  id="cohort_id"
+                  name="cohort_id"
+                  defaultValue=""
+                  className={inputClass}
+                >
+                  <option value="">No cohort (all students in major)</option>
+                  {cohorts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} — {c.major}
+                    </option>
+                  ))}
+                </select>
+                {cohorts.length === 0 && (
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    No active cohorts. Create one in{" "}
+                    <Link href="/admin/cohorts" className="text-indigo-600 hover:underline">
+                      Cohorts
+                    </Link>
+                    .
+                  </p>
+                )}
+              </div>
             </div>
             <div className="pt-2">
               <button
@@ -650,16 +726,16 @@ export default async function AdminTasksPage({
               <p className="mt-2 text-sm text-slate-500">Edit or delete existing tasks.</p>
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-500">
-              {filteredTasks.length} shown
+              {totalFiltered} shown
             </span>
           </div>
           <div className="space-y-6">
-            {filteredTasks.length === 0 ? (
+            {totalFiltered === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
                 No tasks found.
               </div>
             ) : (
-              filteredTasks.map((task) => {
+              pagedTasks.map((task) => {
                 const assignedStudentName = task.assigned_user_id
                   ? getUserDisplayName(task.assigned_user_id, userMap, "Student")
                   : null;
@@ -667,6 +743,7 @@ export default async function AdminTasksPage({
                   ? userMap[task.assigned_user_id]?.major
                   : null;
                 const taskSection = task.section_id ? sectionMap[task.section_id] : null;
+                const taskCohort = task.cohort_id ? cohorts.find((c) => c.id === task.cohort_id) ?? null : null;
                 return (
                   <div key={task.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-6">
                     <div className="mb-5 flex flex-wrap items-center gap-2">
@@ -691,6 +768,11 @@ export default async function AdminTasksPage({
                       {taskSection && (
                         <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-100">
                           📂 {taskSection.name}
+                        </span>
+                      )}
+                      {taskCohort && (
+                        <span className="inline-flex items-center rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-700 ring-1 ring-teal-100">
+                          👥 {taskCohort.name}
                         </span>
                       )}
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
@@ -832,6 +914,24 @@ export default async function AdminTasksPage({
                             ))}
                           </select>
                         </div>
+                        <div>
+                          <label htmlFor={`cohort_id-${task.id}`} className={labelClass}>
+                            Cohort <span className="text-slate-400 font-normal">(optional)</span>
+                          </label>
+                          <select
+                            id={`cohort_id-${task.id}`}
+                            name="cohort_id"
+                            defaultValue={task.cohort_id || ""}
+                            className={inputClass}
+                          >
+                            <option value="">No cohort (all students in major)</option>
+                            {cohorts.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} — {c.major}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-3 pt-2">
                         <button
@@ -884,6 +984,19 @@ export default async function AdminTasksPage({
               })
             )}
           </div>
+
+          {totalFiltered > 0 && (
+            <div className="mt-6 border-t border-slate-100 pt-6">
+              <Pagination
+                currentPage={safePage}
+                totalPages={totalPages}
+                totalItems={totalFiltered}
+                pageSize={PAGE_SIZE}
+                buildHref={buildTaskPageHref}
+                itemLabel={totalFiltered === 1 ? "task" : "tasks"}
+              />
+            </div>
+          )}
         </section>
 
         {/* Section 3 — Submission Review CTA */}

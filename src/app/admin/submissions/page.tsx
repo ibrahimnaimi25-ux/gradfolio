@@ -23,7 +23,9 @@ import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendReviewedEmail } from "@/lib/email";
+import { createNotification } from "@/lib/notifications";
 import SubmitButton from "@/components/submit-button";
+import Pagination from "@/components/pagination";
 import {
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_CLASSES,
@@ -32,6 +34,8 @@ import {
   TASK_STATUS_CLASSES,
 } from "@/lib/constants";
 import type { ReviewStatus } from "@/lib/constants";
+
+const PAGE_SIZE = 20;
 
 export const metadata = { title: "Submission Review | GradFolio" };
 
@@ -72,6 +76,7 @@ type SearchParams = Promise<{
   q?: string;
   success?: string;
   error?: string;
+  page?: string;
 }>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -215,6 +220,25 @@ async function reviewSubmission(formData: FormData) {
     }
   }
 
+  // Fire in-app notification to the student
+  if (submissionForEmail) {
+    const statusPretty =
+      reviewStatus === "approved"
+        ? "approved"
+        : reviewStatus === "needs_revision"
+        ? "marked as needing revision"
+        : reviewStatus === "rejected"
+        ? "rejected"
+        : "reviewed";
+    await createNotification(supabase, {
+      userId: submissionForEmail.user_id,
+      type: "submission_reviewed",
+      title: `Your submission was ${statusPretty}`,
+      body: score && score >= 1 && score <= 5 ? `Score: ${score}/5` : null,
+      link: `/tasks/${submissionForEmail.task_id}`,
+    });
+  }
+
   // Fire-and-forget audit log
   await logAudit({
     userId: user.id,
@@ -305,6 +329,7 @@ export default async function AdminSubmissionsPage({
   const params = await searchParams;
   const statusFilter = params.status ?? "pending";
   const q = (params.q ?? "").toLowerCase().trim();
+  const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const successMessage = decodeMessage(params.success);
   const errorMessage = decodeMessage(params.error);
 
@@ -313,10 +338,11 @@ export default async function AdminSubmissionsPage({
   const isManager = profile.role === "manager";
   const supabase = await createClient();
 
-  // ── Fetch tasks (scoped by major for managers) ───────────────────────────────
+  // ── Fetch tasks (scoped by major for managers; exclude company tasks) ──────────
   let tasksQuery = supabase
     .from("tasks")
-    .select("id, title, major, section_id, submission_type");
+    .select("id, title, major, section_id, submission_type")
+    .is("company_id", null); // exclude company-owned tasks from admin review
   if (majorFilter !== null && majorFilter.length > 0) tasksQuery = tasksQuery.in("major", majorFilter);
   const { data: tasksRaw } = await tasksQuery.returns<TaskRow[]>();
 
@@ -384,6 +410,36 @@ export default async function AdminSubmissionsPage({
     }, {});
   }
 
+  // ── Fetch submission version history ─────────────────────────────────────────
+  type VersionRow = {
+    submission_id: string;
+    version: number;
+    content: string | null;
+    link_url: string | null;
+    file_name: string | null;
+    file_url: string | null;
+    snapshot_at: string;
+  };
+  const versionsBySubmission: Record<string, VersionRow[]> = {};
+  if (submissionsRaw.length > 0) {
+    try {
+      const { data: versions } = await supabase
+        .from("submission_versions")
+        .select("submission_id, version, content, link_url, file_name, file_url, snapshot_at")
+        .in(
+          "submission_id",
+          submissionsRaw.map((s) => s.id)
+        )
+        .order("version", { ascending: true })
+        .returns<VersionRow[]>();
+      for (const v of versions ?? []) {
+        (versionsBySubmission[v.submission_id] ||= []).push(v);
+      }
+    } catch {
+      // table may not exist yet
+    }
+  }
+
   // ── Count by status ──────────────────────────────────────────────────────────
   const counts = submissionsRaw.reduce<Record<ReviewStatus, number>>(
     (acc, s) => { acc[getEffectiveStatus(s)]++; return acc; },
@@ -417,6 +473,21 @@ export default async function AdminSubmissionsPage({
         new Date(a.submitted_at ?? 0).getTime()
       );
     });
+
+  // Pagination
+  const totalFiltered = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedSubmissions = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function buildSubPageHref(page: number) {
+    const p = new URLSearchParams();
+    if (statusFilter && statusFilter !== "pending") p.set("status", statusFilter);
+    if (params.q) p.set("q", params.q);
+    if (page > 1) p.set("page", String(page));
+    const s = p.toString();
+    return `/admin/submissions${s ? `?${s}` : ""}`;
+  }
 
   const inputClass =
     "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
@@ -581,9 +652,23 @@ export default async function AdminSubmissionsPage({
           </section>
         )}
 
+        {/* Top pagination */}
+        {totalFiltered > 0 && (
+          <div className="mt-6">
+            <Pagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              totalItems={totalFiltered}
+              pageSize={PAGE_SIZE}
+              buildHref={buildSubPageHref}
+              itemLabel={totalFiltered === 1 ? "submission" : "submissions"}
+            />
+          </div>
+        )}
+
         {/* Submission cards */}
         <section className="mt-6 space-y-5">
-          {filtered.length === 0 ? (
+          {totalFiltered === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white py-24 text-center">
               <div className="mb-4 text-4xl">📭</div>
               <h3 className="text-base font-semibold text-slate-800">
@@ -594,7 +679,7 @@ export default async function AdminSubmissionsPage({
               </p>
             </div>
           ) : (
-            filtered.map((submission) => {
+            pagedSubmissions.map((submission) => {
               const task = taskMap[submission.task_id];
               const section = task?.section_id ? sectionMap[task.section_id] : null;
               const studentName = getUserName(submission.user_id, userMap);
@@ -734,6 +819,71 @@ export default async function AdminSubmissionsPage({
                     )}
                   </div>
 
+                  {/* Version history */}
+                  {(versionsBySubmission[submission.id]?.length ?? 0) > 0 && (
+                    <details className="mb-5 rounded-2xl border border-slate-200 bg-slate-50/60">
+                      <summary className="cursor-pointer list-none px-4 py-3 text-xs font-semibold uppercase tracking-widest text-slate-500 hover:text-slate-700">
+                        🕑 Previous versions (
+                        {versionsBySubmission[submission.id].length})
+                      </summary>
+                      <div className="space-y-3 border-t border-slate-200 bg-white px-4 py-3">
+                        {versionsBySubmission[submission.id]
+                          .slice()
+                          .reverse()
+                          .map((v) => (
+                            <div
+                              key={`${v.submission_id}-${v.version}`}
+                              className="rounded-xl border border-slate-100 bg-slate-50/60 p-3"
+                            >
+                              <div className="mb-2 flex items-center justify-between">
+                                <span className="text-xs font-semibold text-slate-700">
+                                  v{v.version}
+                                </span>
+                                <span className="text-[11px] text-slate-400">
+                                  {new Date(v.snapshot_at).toLocaleString("en-US", {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                              {v.content && (
+                                <p className="whitespace-pre-wrap text-xs leading-6 text-slate-600 max-h-32 overflow-y-auto">
+                                  {v.content}
+                                </p>
+                              )}
+                              {v.link_url && (
+                                <a
+                                  href={v.link_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block truncate text-xs text-blue-600 hover:underline"
+                                >
+                                  {v.link_url}
+                                </a>
+                              )}
+                              {v.file_url && (
+                                <a
+                                  href={v.file_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs text-blue-600 hover:underline"
+                                >
+                                  📎 {v.file_name || "file"}
+                                </a>
+                              )}
+                              {!v.content && !v.link_url && !v.file_url && (
+                                <p className="text-xs italic text-slate-400">
+                                  (empty snapshot)
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    </details>
+                  )}
+
                   {/* Review form */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-5">
                     <p className="mb-4 text-sm font-semibold text-slate-800">Review</p>
@@ -813,6 +963,20 @@ export default async function AdminSubmissionsPage({
             })
           )}
         </section>
+
+        {/* Bottom pagination */}
+        {totalFiltered > 0 && (
+          <div className="mt-6">
+            <Pagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              totalItems={totalFiltered}
+              pageSize={PAGE_SIZE}
+              buildHref={buildSubPageHref}
+              itemLabel={totalFiltered === 1 ? "submission" : "submissions"}
+            />
+          </div>
+        )}
 
       </div>
     </main>

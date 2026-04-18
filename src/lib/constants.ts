@@ -56,3 +56,52 @@ export const REVIEW_STATUS_BORDER: Record<ReviewStatus, string> = {
   needs_revision: "border-sky-100 bg-sky-50/20",
   rejected: "border-rose-100 bg-rose-50/20",
 };
+
+// ─── Job posts (Phase 6) ──────────────────────────────────────────────────────
+export const EMPLOYMENT_TYPES = ["internship", "full_time", "part_time", "contract"] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
+export const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
+  internship: "Internship",
+  full_time: "Full-time",
+  part_time: "Part-time",
+  contract: "Contract",
+};
+
+export const JOB_POST_STATUSES = ["open", "closed", "archived"] as const;
+export type JobPostStatus = (typeof JOB_POST_STATUSES)[number];
+
+export const JOB_POST_STATUS_CLASSES: Record<JobPostStatus, string> = {
+  open: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  closed: "bg-slate-100 text-slate-600 ring-1 ring-slate-200",
+  archived: "bg-slate-50 text-slate-400 ring-1 ring-slate-200",
+};
+
+// ─── Job applications (Phase 6) ───────────────────────────────────────────────
+export const JOB_APP_STATUSES = [
+  "submitted",
+  "viewed",
+  "shortlisted",
+  "rejected",
+  "hired",
+  "withdrawn",
+] as const;
+export type JobAppStatus = (typeof JOB_APP_STATUSES)[number];
+
+export const JOB_APP_STATUS_LABELS: Record<JobAppStatus, string> = {
+  submitted: "Submitted",
+  viewed: "Viewed",
+  shortlisted: "Shortlisted",
+  rejected: "Not moving forward",
+  hired: "Hired",
+  withdrawn: "Withdrawn",
+};
+
+export const JOB_APP_STATUS_CLASSES: Record<JobAppStatus, string> = {
+  submitted: "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+  viewed: "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
+  shortlisted: "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
+  rejected: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+  hired: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  withdrawn: "bg-slate-50 text-slate-500 ring-1 ring-slate-200",
+};

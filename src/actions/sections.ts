@@ -56,7 +56,9 @@ export async function getSections() {
   const { data, error } = await supabase
     .from("sections")
     .select("*, tasks(count)")
-    .order("created_at", { ascending: false });
+    .order("major", { ascending: true })
+    .order("order_index", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
 
   if (error) throw new Error(error.message);
 
@@ -72,7 +74,9 @@ export async function getSectionsForStaff() {
   let query = supabase
     .from("sections")
     .select("*, tasks(count)")
-    .order("created_at", { ascending: false });
+    .order("major", { ascending: true })
+    .order("order_index", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
 
   if (profile.role === "manager") {
     const majors = getAllowedMajors(profile);
@@ -163,6 +167,57 @@ export async function updateSection(id: string, formData: FormData) {
   revalidatePath("/admin/sections");
   revalidatePath("/tasks");
   revalidatePath(`/tasks/sections/${id}`);
+}
+
+export async function moveSection(id: string, direction: "up" | "down") {
+  const { supabase, profile } = await getStaffProfile();
+
+  // Find the target section so we know which major group to reorder within
+  const { data: target } = await supabase
+    .from("sections")
+    .select("id, major, order_index")
+    .eq("id", id)
+    .maybeSingle<{ id: string; major: string; order_index: number | null }>();
+
+  if (!target) throw new Error("Section not found.");
+  assertMajorAccess(profile, target.major);
+
+  // Fetch sibling sections in the same major, ordered
+  const { data: siblings } = await supabase
+    .from("sections")
+    .select("id, order_index, created_at")
+    .eq("major", target.major)
+    .order("order_index", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true })
+    .returns<{ id: string; order_index: number | null; created_at: string }[]>();
+
+  if (!siblings || siblings.length < 2) return;
+
+  // Normalize null order_index to array position
+  const normalized = siblings.map((s, i) => ({ id: s.id, order_index: s.order_index ?? i }));
+
+  const idx = normalized.findIndex((s) => s.id === id);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= normalized.length) return;
+
+  const curr = normalized[idx];
+  const swap = normalized[swapIdx];
+
+  await Promise.all([
+    supabase.from("sections").update({ order_index: swap.order_index }).eq("id", curr.id),
+    supabase.from("sections").update({ order_index: curr.order_index }).eq("id", swap.id),
+  ]);
+
+  revalidatePath("/admin/sections");
+  revalidatePath("/tasks");
+}
+
+export async function moveSectionUp(id: string) {
+  return moveSection(id, "up");
+}
+
+export async function moveSectionDown(id: string) {
+  return moveSection(id, "down");
 }
 
 export async function deleteSection(id: string) {

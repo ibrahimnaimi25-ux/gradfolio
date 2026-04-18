@@ -84,7 +84,9 @@ export default async function TasksPage({
   const { data } = await supabase
     .from("sections")
     .select("*, tasks(count)")
-    .order("major", { ascending: true });
+    .order("major", { ascending: true })
+    .order("order_index", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
 
   const allSections: SectionWithTaskCount[] = (data ?? []).map((s: any) => ({
     ...s,
@@ -117,6 +119,46 @@ export default async function TasksPage({
 
   const majors = Object.keys(byMajor).sort();
   const totalTasks = sections.reduce((a, s) => a + s.task_count, 0);
+
+  // Company challenges — tasks posted by companies, visible to matching major
+  type CompanyTask = {
+    id: string;
+    title: string;
+    description: string | null;
+    major: string | null;
+    submission_type: string | null;
+    due_date: string | null;
+    status: string | null;
+    company_id: string;
+  };
+  type CompanyProfile = { id: string; company_name: string | null; industry: string | null };
+
+  let companyTasks: CompanyTask[] = [];
+  let companyProfileMap: Record<string, CompanyProfile> = {};
+  if (!isAdmin && userMajor) {
+    try {
+      const { data: ctData } = await supabase
+        .from("tasks")
+        .select("id, title, description, major, submission_type, due_date, status, company_id")
+        .eq("task_source", "company")
+        .eq("status", "open")
+        .is("archived_at", null)
+        .eq("major", userMajor)
+        .order("created_at", { ascending: false })
+        .returns<CompanyTask[]>();
+      companyTasks = ctData ?? [];
+
+      const companyIds = [...new Set(companyTasks.map((t) => t.company_id))];
+      if (companyIds.length > 0) {
+        const { data: cpData } = await supabase
+          .from("profiles")
+          .select("id, company_name, industry")
+          .in("id", companyIds)
+          .returns<CompanyProfile[]>();
+        companyProfileMap = Object.fromEntries((cpData ?? []).map((p) => [p.id, p]));
+      }
+    } catch { /* company columns may not exist yet */ }
+  }
 
   // Progress map — students only (admins have no personal progress to show)
   let progressMap: Record<string, SectionProgress> = {};
@@ -205,6 +247,58 @@ export default async function TasksPage({
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-8 py-10 space-y-12">
+        {/* Company Challenges — shown to students only */}
+        {!isAdmin && companyTasks.length > 0 && (
+          <section>
+            <div className="flex items-center gap-3 mb-5">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-indigo-500" />
+              <h2 className="text-sm font-semibold text-slate-800">Company Challenges</h2>
+              <span className="text-xs text-slate-400">{companyTasks.length} open</span>
+              <div className="flex-1 h-px bg-slate-100" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {companyTasks.map((task) => {
+                const company = companyProfileMap[task.company_id];
+                return (
+                  <Link
+                    key={task.id}
+                    href={`/tasks/${task.id}`}
+                    className="group bg-white border-2 border-indigo-200 hover:border-indigo-400 rounded-2xl p-5 flex flex-col gap-3 hover:shadow-md transition-all duration-200"
+                  >
+                    <div className="flex items-start justify-between">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                        {company?.company_name ?? "Company"}
+                      </span>
+                      {task.due_date && (
+                        <span className="text-xs text-slate-400">
+                          Due {new Date(task.due_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-semibold text-slate-900 text-base leading-snug transition-colors group-hover:text-indigo-700">
+                      {task.title}
+                    </h3>
+                    {task.description && (
+                      <p className="text-sm text-slate-500 line-clamp-2 flex-1">
+                        {task.description}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between pt-2 mt-auto border-t border-slate-100">
+                      <span className="text-xs font-medium text-slate-500">
+                        {task.submission_type ?? "any"} submission
+                        {company?.industry ? ` · ${company.industry}` : ""}
+                      </span>
+                      <span className="text-xs font-semibold opacity-0 group-hover:opacity-100 transition-all duration-200 text-indigo-400">
+                        Submit →
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
         {sections.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-28 text-center">
             <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl mb-5">

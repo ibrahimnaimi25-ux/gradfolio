@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { NavLinks } from "@/components/navbar-links";
 import { NavbarMobile } from "@/components/navbar-mobile";
+import NotificationBell from "@/components/notification-bell";
 
 export default async function Navbar() {
   const supabase = await createClient();
@@ -115,6 +116,9 @@ export default async function Navbar() {
         <div className="flex items-center gap-2">
           {user ? (
             <>
+              <div className="hidden md:block">
+                <NotificationBell />
+              </div>
               <span
                 className={`hidden rounded-full px-3 py-1.5 text-xs font-medium md:inline-block ${roleBadgeClass}`}
               >

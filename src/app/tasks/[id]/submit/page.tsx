@@ -10,6 +10,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SubmitButton from "@/components/submit-button";
 import { logAudit } from "@/lib/audit";
+import { snapshotSubmissionVersion } from "@/lib/submission-versions";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -226,6 +227,8 @@ async function saveSubmission(formData: FormData) {
     submitted_at: new Date().toISOString(),
   };
   if (existingSubmission) {
+    // Snapshot the existing state before we overwrite it
+    await snapshotSubmissionVersion(supabase, existingSubmission.id);
     const nextVersion = (existingSubmission.version ?? 1) + 1;
     const { error } = await supabase.from("submissions").update({ ...payload, version: nextVersion }).eq("id", existingSubmission.id);
     if (error) redirect(`${redirectBase}?error=${encodeURIComponent(error.message)}`);

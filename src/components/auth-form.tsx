@@ -5,6 +5,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { MAJOR_NAMES } from "@/lib/majors";
+import GoogleSignInButton from "@/components/google-signin-button";
 
 type AuthFormProps = {
   mode: "login" | "register";
@@ -53,9 +54,9 @@ export default function AuthForm({ mode, majors }: AuthFormProps) {
           return;
         }
 
-        setMessage("Registration successful. You can now log in.");
+        // Redirect to email verification page instead of login
         setLoading(false);
-        router.push("/login");
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`);
         return;
       }
 
@@ -70,6 +71,29 @@ export default function AuthForm({ mode, majors }: AuthFormProps) {
         return;
       }
 
+      // Check if this user still needs major selection (students only)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, major")
+          .eq("id", user.id)
+          .maybeSingle();
+        setLoading(false);
+        if (profile?.role === "company") {
+          router.push("/company/setup");
+        } else if (profile?.role === "manager") {
+          router.push("/manager/dashboard");
+        } else if (profile?.role === "admin") {
+          router.push("/dashboard");
+        } else if (!profile?.major) {
+          router.push("/onboarding/major");
+        } else {
+          router.push("/dashboard");
+        }
+        router.refresh();
+        return;
+      }
       setLoading(false);
       router.push("/dashboard");
       router.refresh();
@@ -91,7 +115,19 @@ export default function AuthForm({ mode, majors }: AuthFormProps) {
           : "Fill in the details below to get started."}
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      {/* Google signin — quick path */}
+      <div className="mt-6">
+        <GoogleSignInButton label={mode === "login" ? "Sign in with Google" : "Sign up with Google"} />
+      </div>
+
+      {/* Divider */}
+      <div className="my-5 flex items-center gap-3">
+        <div className="flex-1 h-px bg-slate-100" />
+        <span className="text-xs font-medium text-slate-400">or with email</span>
+        <div className="flex-1 h-px bg-slate-100" />
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
         {mode === "register" && (
           <>
             <div>

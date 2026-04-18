@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { snapshotSubmissionVersion } from "@/lib/submission-versions";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -233,6 +234,8 @@ async function saveSubmission(formData: FormData) {
     submitted_at: new Date().toISOString(),
   };
   if (existingSubmission) {
+    // Snapshot the existing state before we overwrite it
+    await snapshotSubmissionVersion(supabase, existingSubmission.id);
     const { error } = await supabase.from("submissions").update(payload).eq("id", existingSubmission.id);
     if (error) redirect(`${redirectBase}?error=${encodeURIComponent(error.message)}`);
   } else {

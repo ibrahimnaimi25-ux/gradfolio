@@ -4,6 +4,7 @@ export type Section = {
   major: string;
   description: string | null;
   created_at: string;
+  order_index: number | null;
 };
 
 export type SectionWithTaskCount = Section & {

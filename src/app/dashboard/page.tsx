@@ -16,6 +16,8 @@ import { getMajorNames } from "@/lib/majors-db";
 import OnboardingBanner from "@/components/onboarding-banner";
 import { getSectionProgressMap, type SectionProgress } from "@/lib/section-progress";
 import SubmitButton from "@/components/submit-button";
+import { findQualifyingSubmissionsForJobs, type JobPostRow } from "@/lib/jobs";
+import { EMPLOYMENT_TYPE_LABELS, type EmploymentType } from "@/lib/constants";
 
 type RecentSubmission = {
   id: string;
@@ -267,6 +269,69 @@ export default async function DashboardPage({
         .returns<CohortInfo[]>();
       activeCohort = cohortData?.[0] ?? null;
     } catch { /* table may not exist yet */ }
+  }
+
+  // Jobs the student qualifies for (max 5 on dashboard)
+  type QualifyingJob = JobPostRow & {
+    company_name: string | null;
+  };
+  let qualifyingJobs: QualifyingJob[] = [];
+  if (!isStaff) {
+    try {
+      const { data: openJobs } = await supabase
+        .from("job_posts")
+        .select(
+          "id, company_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
+        )
+        .eq("status", "open")
+        .order("created_at", { ascending: false })
+        .limit(50)
+        .returns<JobPostRow[]>();
+
+      let candidateJobs = openJobs ?? [];
+      if (userMajor) {
+        candidateJobs = candidateJobs.filter(
+          (j) => !j.majors || j.majors.length === 0 || j.majors.includes(userMajor!)
+        );
+      }
+
+      // Exclude jobs the student already applied to
+      if (candidateJobs.length > 0) {
+        const { data: apps } = await supabase
+          .from("job_applications")
+          .select("job_id")
+          .eq("user_id", user.id)
+          .in(
+            "job_id",
+            candidateJobs.map((j) => j.id)
+          )
+          .returns<{ job_id: string }[]>();
+        const appliedSet = new Set((apps ?? []).map((a) => a.job_id));
+        candidateJobs = candidateJobs.filter((j) => !appliedSet.has(j.id));
+      }
+
+      if (candidateJobs.length > 0) {
+        const q = await findQualifyingSubmissionsForJobs(supabase, user.id, candidateJobs);
+        const qualified = candidateJobs.filter((j) => q[j.id]);
+        const limited = qualified.slice(0, 5);
+
+        if (limited.length > 0) {
+          const companyIds = Array.from(new Set(limited.map((j) => j.company_id)));
+          const { data: companies } = await supabase
+            .from("profiles")
+            .select("id, company_name")
+            .in("id", companyIds)
+            .returns<{ id: string; company_name: string | null }[]>();
+          const nameMap = Object.fromEntries(
+            (companies ?? []).map((c) => [c.id, c.company_name])
+          );
+          qualifyingJobs = limited.map((j) => ({
+            ...j,
+            company_name: nameMap[j.company_id] ?? null,
+          }));
+        }
+      }
+    } catch { /* job tables may not exist yet */ }
   }
 
   // Company task feedback for students
@@ -753,6 +818,61 @@ export default async function DashboardPage({
           </section>
         )}
 
+        {/* Jobs You Qualify For — students only */}
+        {!isStaff && qualifyingJobs.length > 0 && (
+          <section>
+            <Card className="rounded-3xl border-emerald-100">
+              <CardHeader>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-lg">
+                      💼
+                    </div>
+                    <div>
+                      <CardTitle>Jobs You Qualify For</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Roles unlocked by your approved submissions.
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Link
+                    href="/jobs"
+                    className="text-sm font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
+                  >
+                    Browse all →
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2.5">
+                  {qualifyingJobs.map((job) => (
+                    <Link
+                      key={job.id}
+                      href={`/jobs/${job.id}`}
+                      className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/30 px-4 py-3 transition-all hover:border-emerald-200 hover:shadow-sm"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {job.title}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">
+                          {job.company_name ?? "Company"}
+                          {job.location ? ` · ${job.location}` : ""}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        {EMPLOYMENT_TYPE_LABELS[job.employment_type as EmploymentType] ??
+                          job.employment_type}
+                      </span>
+                      <span className="shrink-0 text-xs text-slate-300">→</span>
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
         {/* My Sections — students only */}
         {!isStaff && userMajor && (
           <section>
@@ -828,9 +948,15 @@ export default async function DashboardPage({
                                   : `${prog.done} / ${prog.total} submitted`
                                 : `${section.task_count} task${section.task_count !== 1 ? "s" : ""}`}
                             </span>
-                            <span className="text-xs text-indigo-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                              Open →
-                            </span>
+                            {hasProg && prog.avg_score != null ? (
+                              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                                ★ {prog.avg_score.toFixed(1)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-indigo-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                                Open →
+                              </span>
+                            )}
                           </div>
                         </Link>
                       );

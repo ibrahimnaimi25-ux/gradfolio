@@ -84,7 +84,9 @@ export default async function TasksPage({
   const { data } = await supabase
     .from("sections")
     .select("*, tasks(count)")
-    .order("major", { ascending: true });
+    .order("major", { ascending: true })
+    .order("order_index", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
 
   const allSections: SectionWithTaskCount[] = (data ?? []).map((s: any) => ({
     ...s,

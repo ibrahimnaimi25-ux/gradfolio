@@ -150,7 +150,9 @@ export async function sendReviewedEmail({
 
   if (error) {
     console.error("[email] sendReviewedEmail failed:", error);
+    return { error };
   }
+  return { error: null };
 }
 
 // ─── Deadline reminder ────────────────────────────────────────────────────────
@@ -204,5 +206,7 @@ export async function sendDeadlineReminderEmail({
 
   if (error) {
     console.error("[email] sendDeadlineReminderEmail failed:", error);
+    return { error };
   }
+  return { error: null };
 }

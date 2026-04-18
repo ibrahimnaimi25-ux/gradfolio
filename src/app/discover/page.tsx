@@ -91,6 +91,64 @@ export default async function DiscoverPage({
     });
   }
 
+  // ─── Leaderboard (per major) ───────────────────────────────────────────────
+  // Top 5 students in the currently-selected major by avg approved score.
+  type LeaderboardEntry = {
+    id: string;
+    full_name: string | null;
+    avatar_url: string | null;
+    headline: string | null;
+    major: string | null;
+    avg_score: number;
+    submissions: number;
+  };
+  let leaderboard: LeaderboardEntry[] = [];
+  if (major) {
+    const { data: majorStudents } = await supabase
+      .from("profiles")
+      .select("id, full_name, avatar_url, headline, major")
+      .eq("role", "student")
+      .eq("major", major)
+      .eq("open_to_opportunities", true)
+      .returns<{
+        id: string;
+        full_name: string | null;
+        avatar_url: string | null;
+        headline: string | null;
+        major: string | null;
+      }[]>();
+
+    const studentIds = (majorStudents ?? []).map((s) => s.id);
+    if (studentIds.length > 0) {
+      const { data: scored } = await supabase
+        .from("submissions")
+        .select("user_id, score")
+        .in("user_id", studentIds)
+        .eq("review_status", "approved")
+        .not("score", "is", null)
+        .returns<{ user_id: string; score: number }[]>();
+
+      const agg: Record<string, { sum: number; n: number }> = {};
+      for (const row of scored ?? []) {
+        (agg[row.user_id] ||= { sum: 0, n: 0 });
+        agg[row.user_id].sum += row.score;
+        agg[row.user_id].n += 1;
+      }
+
+      leaderboard = (majorStudents ?? [])
+        .filter((s) => agg[s.id])
+        .map((s) => ({
+          ...s,
+          avg_score: agg[s.id].sum / agg[s.id].n,
+          submissions: agg[s.id].n,
+        }))
+        .sort(
+          (a, b) => b.avg_score - a.avg_score || b.submissions - a.submissions
+        )
+        .slice(0, 5);
+    }
+  }
+
   // Client-side search filter on skills/name/headline
   const filtered = search
     ? students.filter((s) => {
@@ -182,6 +240,70 @@ export default async function DiscoverPage({
             {search && ` matching "${q}"`}
           </p>
         </div>
+
+        {/* Leaderboard (only when a major is selected) */}
+        {major && leaderboard.length > 0 && (
+          <section className="mb-8 rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50/60 to-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-lg">
+                🏆
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  Top talent in {major}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Ranked by average reviewer score across approved submissions.
+                </p>
+              </div>
+            </div>
+            <ol className="space-y-2">
+              {leaderboard.map((entry, idx) => {
+                const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null;
+                return (
+                  <li key={entry.id}>
+                    <Link
+                      href={`/students/${entry.id}`}
+                      className="flex items-center gap-4 rounded-2xl border border-transparent bg-white px-4 py-3 shadow-sm transition hover:border-amber-200 hover:shadow"
+                    >
+                      <span className="w-7 shrink-0 text-center text-sm font-bold text-slate-500">
+                        {medal ?? `#${idx + 1}`}
+                      </span>
+                      {entry.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={entry.avatar_url}
+                          alt={entry.full_name ?? "Student"}
+                          className="h-10 w-10 shrink-0 rounded-xl object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white">
+                          {getInitials(entry.full_name)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {entry.full_name ?? "Student"}
+                        </p>
+                        {entry.headline && (
+                          <p className="truncate text-xs text-slate-500">{entry.headline}</p>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-bold text-amber-700">
+                          ★ {entry.avg_score.toFixed(2)}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          {entry.submissions} submission{entry.submissions !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        )}
 
         {/* Grid */}
         {filtered.length === 0 ? (

@@ -28,7 +28,7 @@ export default async function CompanyJobNewPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const { supabase, user } = await requireCompany();
+  const { supabase, org } = await requireCompany();
   const { error } = await searchParams;
 
   const [majorNames, myTasksResp, platformTasksResp] = await Promise.all([
@@ -36,14 +36,14 @@ export default async function CompanyJobNewPage({
     supabase
       .from("tasks")
       .select("id, title, major, task_source")
-      .eq("company_id", user.id)
+      .eq("org_id", org.id)
       .order("created_at", { ascending: false })
       .limit(100)
       .returns<TaskOption[]>(),
     supabase
       .from("tasks")
       .select("id, title, major, task_source")
-      .is("company_id", null)
+      .is("org_id", null)
       .eq("status", "open")
       .order("created_at", { ascending: false })
       .limit(100)

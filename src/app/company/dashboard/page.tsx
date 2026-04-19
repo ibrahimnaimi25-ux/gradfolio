@@ -65,14 +65,14 @@ export default async function CompanyDashboardPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const { supabase, user, profile } = await requireCompany();
+  const { supabase, profile, org } = await requireCompany();
   const { welcome } = await searchParams;
 
   // Tasks
   const { data: tasks } = await supabase
     .from("tasks")
     .select("id, title, archived_at, status")
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .eq("task_source", "company")
     .returns<TaskRow[]>();
   const taskList = tasks ?? [];
@@ -100,7 +100,7 @@ export default async function CompanyDashboardPage({
   const { data: jobs } = await supabase
     .from("job_posts")
     .select("id, title, status")
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .returns<JobRow[]>();
   const jobList = jobs ?? [];
   const activeJobIds = jobList.filter((j) => j.status === "open").map((j) => j.id);
@@ -128,7 +128,7 @@ export default async function CompanyDashboardPage({
   const { data: connections } = await supabase
     .from("connections")
     .select("id, student_id, created_at, status")
-    .eq("company_user_id", user.id)
+    .eq("org_id", org.id)
     .order("created_at", { ascending: false })
     .limit(6)
     .returns<ConnectionRow[]>();

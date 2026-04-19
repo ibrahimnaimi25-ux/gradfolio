@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Edit Job | GradFolio" };
 
 type JobPostRow = {
   id: string;
-  company_id: string;
+  org_id: string | null;
   title: string;
   description: string | null;
   location: string | null;
@@ -40,7 +40,7 @@ const labelClass = "mb-1.5 block text-sm font-medium text-slate-700";
 
 async function updateJobPost(formData: FormData) {
   "use server";
-  const { supabase, user } = await requireCompany();
+  const { supabase, user, org } = await requireCompany();
 
   const jobId = String(formData.get("job_id") || "").trim();
   if (!jobId) redirect("/company/jobs?error=Missing+job+id");
@@ -75,7 +75,7 @@ async function updateJobPost(formData: FormData) {
       deadline,
     })
     .eq("id", jobId)
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .select("id");
 
   if (error) redirect(`/company/jobs/${jobId}/edit?error=${encodeURIComponent(error.message)}`);
@@ -117,15 +117,15 @@ export default async function EditJobPage({
   const sp = await searchParams;
   const error = decodeMessage(sp.error);
 
-  const { supabase, user } = await requireCompany();
+  const { supabase, org } = await requireCompany();
 
   const { data: job } = await supabase
     .from("job_posts")
     .select(
-      "id, company_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline"
+      "id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline"
     )
     .eq("id", id)
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .maybeSingle<JobPostRow>();
 
   if (!job) notFound();
@@ -133,7 +133,7 @@ export default async function EditJobPage({
   const { data: companyTasks } = await supabase
     .from("tasks")
     .select("id, title, major")
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .order("created_at", { ascending: false })
     .limit(100)
     .returns<TaskOption[]>();
@@ -141,7 +141,7 @@ export default async function EditJobPage({
   const { data: platformTasks } = await supabase
     .from("tasks")
     .select("id, title, major")
-    .is("company_id", null)
+    .is("org_id", null)
     .eq("status", "open")
     .order("created_at", { ascending: false })
     .limit(100)

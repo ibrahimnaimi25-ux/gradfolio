@@ -342,7 +342,7 @@ export default async function AdminSubmissionsPage({
   let tasksQuery = supabase
     .from("tasks")
     .select("id, title, major, section_id, submission_type")
-    .is("company_id", null); // exclude company-owned tasks from admin review
+    .is("org_id", null); // exclude company/university-owned tasks from admin review
   if (majorFilter !== null && majorFilter.length > 0) tasksQuery = tasksQuery.in("major", majorFilter);
   const { data: tasksRaw } = await tasksQuery.returns<TaskRow[]>();
 

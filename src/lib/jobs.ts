@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type JobPostRow = {
   id: string;
-  company_id: string;
+  company_id: string | null;
+  org_id: string | null;
   title: string;
   description: string | null;
   location: string | null;

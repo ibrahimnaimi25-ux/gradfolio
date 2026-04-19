@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireCompany } from "@/lib/auth";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import type { Metadata } from "next";
@@ -116,30 +117,30 @@ function MajorBadge({ major }: { major: string | null }) {
 // ── Server action: company expresses interest in student ──────────────────────
 async function expressInterest(formData: FormData) {
   "use server";
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { supabase, user, org } = await requireCompany();
 
   const studentId = formData.get("student_id")?.toString() ?? "";
   const message = formData.get("message")?.toString().trim() || null;
 
-  // Upsert so double-click doesn't create duplicates
+  // Upsert so double-click doesn't create duplicates.
+  // Shadow mode: dual-write legacy company_user_id + new org_id.
   await supabase.from("connections").upsert(
-    { company_user_id: user.id, student_id: studentId, message, status: "interested" },
-    { onConflict: "company_user_id,student_id" }
+    {
+      org_id: org.id,
+      company_user_id: user.id,
+      student_id: studentId,
+      message,
+      status: "interested",
+    },
+    { onConflict: "org_id,student_id" }
   );
 
   // Notify the student
   const { createNotification } = await import("@/lib/notifications");
-  const { data: companyProfile } = await supabase
-    .from("profiles")
-    .select("company_name")
-    .eq("id", user.id)
-    .maybeSingle<{ company_name: string | null }>();
   await createNotification(supabase, {
     userId: studentId,
     type: "company_interest",
-    title: `${companyProfile?.company_name ?? "A company"} is interested in you`,
+    title: `${org.name ?? "A company"} is interested in you`,
     body: message ? message.slice(0, 140) : null,
     link: "/dashboard",
   });
@@ -150,15 +151,13 @@ async function expressInterest(formData: FormData) {
 
 async function withdrawInterest(formData: FormData) {
   "use server";
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { supabase, org } = await requireCompany();
 
   const studentId = formData.get("student_id")?.toString() ?? "";
   await supabase
     .from("connections")
     .delete()
-    .eq("company_user_id", user.id)
+    .eq("org_id", org.id)
     .eq("student_id", studentId);
 
   revalidatePath(`/students/${studentId}`);
@@ -234,13 +233,21 @@ export default async function StudentPortfolioPage({
   // Check if this company has already expressed interest
   let hasExpressedInterest = false;
   if (isCompany) {
-    const { data: existing } = await supabase
-      .from("connections")
+    const { data: viewerOrg } = await supabase
+      .from("organizations")
       .select("id")
-      .eq("company_user_id", user.id)
-      .eq("student_id", id)
-      .maybeSingle();
-    hasExpressedInterest = !!existing;
+      .eq("owner_user_id", user.id)
+      .eq("type", "company")
+      .maybeSingle<{ id: string }>();
+    if (viewerOrg) {
+      const { data: existing } = await supabase
+        .from("connections")
+        .select("id")
+        .eq("org_id", viewerOrg.id)
+        .eq("student_id", id)
+        .maybeSingle();
+      hasExpressedInterest = !!existing;
+    }
   }
 
   // Fetch all optional columns in one try/catch — degrades gracefully before migration

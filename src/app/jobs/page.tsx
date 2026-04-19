@@ -20,7 +20,7 @@ type SearchParams = Promise<{
 
 type CompanyRow = {
   id: string;
-  company_name: string | null;
+  name: string | null;
   industry: string | null;
 };
 
@@ -66,7 +66,7 @@ export default async function JobsBrowsePage({
   let query = supabase
     .from("job_posts")
     .select(
-      "id, company_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
+      "id, company_id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
     )
     .eq("status", "open")
     .order("created_at", { ascending: false });
@@ -82,13 +82,15 @@ export default async function JobsBrowsePage({
   }
 
   // Fetch companies for these jobs
-  const companyIds = Array.from(new Set(jobs.map((j) => j.company_id)));
+  const orgIds = Array.from(
+    new Set(jobs.map((j) => j.org_id).filter((v): v is string => !!v))
+  );
   const companiesById: Record<string, CompanyRow> = {};
-  if (companyIds.length > 0) {
+  if (orgIds.length > 0) {
     const { data: companies } = await supabase
-      .from("profiles")
-      .select("id, company_name, industry")
-      .in("id", companyIds)
+      .from("organizations")
+      .select("id, name, industry")
+      .in("id", orgIds)
       .returns<CompanyRow[]>();
     for (const c of companies ?? []) companiesById[c.id] = c;
   }
@@ -255,7 +257,7 @@ export default async function JobsBrowsePage({
           ) : (
             <div className="space-y-4">
               {paged.map((job) => {
-                const company = companiesById[job.company_id];
+                const company = job.org_id ? companiesById[job.org_id] : undefined;
                 const requiredTask = job.required_task_id
                   ? tasksById[job.required_task_id]
                   : null;
@@ -288,7 +290,7 @@ export default async function JobsBrowsePage({
                           )}
                         </div>
                         <p className="mt-1 text-sm font-medium text-slate-600">
-                          {company?.company_name ?? "Company"}
+                          {company?.name ?? "Company"}
                           {company?.industry ? ` · ${company.industry}` : ""}
                         </p>
                         {job.description && (

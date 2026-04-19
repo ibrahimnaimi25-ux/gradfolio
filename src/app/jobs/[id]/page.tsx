@@ -17,10 +17,10 @@ export const metadata: Metadata = { title: "Job Details | GradFolio" };
 
 type CompanyRow = {
   id: string;
-  company_name: string | null;
+  name: string | null;
   industry: string | null;
-  company_website: string | null;
-  company_description: string | null;
+  website: string | null;
+  description: string | null;
 };
 
 type TaskRow = {
@@ -162,18 +162,20 @@ export default async function JobDetailPage({
   const { data: job } = await supabase
     .from("job_posts")
     .select(
-      "id, company_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
+      "id, company_id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
     )
     .eq("id", id)
     .maybeSingle<JobPostRow>();
 
   if (!job) notFound();
 
-  const { data: company } = await supabase
-    .from("profiles")
-    .select("id, company_name, industry, company_website, company_description")
-    .eq("id", job.company_id)
-    .maybeSingle<CompanyRow>();
+  const { data: company } = job.org_id
+    ? await supabase
+        .from("organizations")
+        .select("id, name, industry, website, description")
+        .eq("id", job.org_id)
+        .maybeSingle<CompanyRow>()
+    : { data: null };
 
   let requiredTask: TaskRow | null = null;
   if (job.required_task_id) {
@@ -246,7 +248,7 @@ export default async function JobDetailPage({
         {/* Header */}
         <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm md:p-10">
           <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">
-            {company?.company_name ?? "Company"}
+            {company?.name ?? "Company"}
             {company?.industry ? ` · ${company.industry}` : ""}
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
@@ -297,17 +299,17 @@ export default async function JobDetailPage({
         )}
 
         {/* Company */}
-        {company?.company_description && (
+        {company?.description && (
           <section className="rounded-3xl border border-black/5 bg-white p-8 shadow-sm">
             <h2 className="mb-3 text-lg font-semibold text-slate-900">
-              About {company.company_name}
+              About {company.name}
             </h2>
             <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
-              {company.company_description}
+              {company.description}
             </p>
-            {company.company_website && (
+            {company.website && (
               <a
-                href={company.company_website}
+                href={company.website}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800"

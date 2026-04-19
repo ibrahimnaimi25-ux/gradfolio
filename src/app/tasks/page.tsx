@@ -129,9 +129,9 @@ export default async function TasksPage({
     submission_type: string | null;
     due_date: string | null;
     status: string | null;
-    company_id: string;
+    org_id: string | null;
   };
-  type CompanyProfile = { id: string; company_name: string | null; industry: string | null };
+  type CompanyProfile = { id: string; name: string | null; industry: string | null };
 
   let companyTasks: CompanyTask[] = [];
   let companyProfileMap: Record<string, CompanyProfile> = {};
@@ -139,7 +139,7 @@ export default async function TasksPage({
     try {
       const { data: ctData } = await supabase
         .from("tasks")
-        .select("id, title, description, major, submission_type, due_date, status, company_id")
+        .select("id, title, description, major, submission_type, due_date, status, org_id")
         .eq("task_source", "company")
         .eq("status", "open")
         .is("archived_at", null)
@@ -148,16 +148,18 @@ export default async function TasksPage({
         .returns<CompanyTask[]>();
       companyTasks = ctData ?? [];
 
-      const companyIds = [...new Set(companyTasks.map((t) => t.company_id))];
-      if (companyIds.length > 0) {
+      const orgIds = [
+        ...new Set(companyTasks.map((t) => t.org_id).filter((v): v is string => !!v)),
+      ];
+      if (orgIds.length > 0) {
         const { data: cpData } = await supabase
-          .from("profiles")
-          .select("id, company_name, industry")
-          .in("id", companyIds)
+          .from("organizations")
+          .select("id, name, industry")
+          .in("id", orgIds)
           .returns<CompanyProfile[]>();
         companyProfileMap = Object.fromEntries((cpData ?? []).map((p) => [p.id, p]));
       }
-    } catch { /* company columns may not exist yet */ }
+    } catch { /* org tables may not exist yet */ }
   }
 
   // Progress map — students only (admins have no personal progress to show)
@@ -258,7 +260,7 @@ export default async function TasksPage({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {companyTasks.map((task) => {
-                const company = companyProfileMap[task.company_id];
+                const company = task.org_id ? companyProfileMap[task.org_id] : undefined;
                 return (
                   <Link
                     key={task.id}
@@ -268,7 +270,7 @@ export default async function TasksPage({
                     <div className="flex items-start justify-between">
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                        {company?.company_name ?? "Company"}
+                        {company?.name ?? "Company"}
                       </span>
                       {task.due_date && (
                         <span className="text-xs text-slate-400">

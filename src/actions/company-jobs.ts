@@ -7,7 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { EMPLOYMENT_TYPES, type EmploymentType } from "@/lib/constants";
 
 export async function createJobPost(formData: FormData) {
-  const { supabase, user } = await requireCompany();
+  const { supabase, user, org } = await requireCompany();
 
   const title = String(formData.get("title") || "").trim();
   const description = String(formData.get("description") || "").trim() || null;
@@ -30,23 +30,25 @@ export async function createJobPost(formData: FormData) {
     redirect("/company/jobs/new?error=Invalid+employment+type");
   }
 
-  // Validate required_task_id, if present, is either owned by the company
-  // or a platform (company_id IS NULL) task.
+  // Validate required_task_id, if present, is either owned by the caller's
+  // org or a platform (org_id IS NULL) task.
   if (requiredTaskId) {
     const { data: t } = await supabase
       .from("tasks")
-      .select("id, company_id")
+      .select("id, org_id")
       .eq("id", requiredTaskId)
-      .maybeSingle<{ id: string; company_id: string | null }>();
-    if (!t || (t.company_id !== null && t.company_id !== user.id)) {
+      .maybeSingle<{ id: string; org_id: string | null }>();
+    if (!t || (t.org_id !== null && t.org_id !== org.id)) {
       redirect("/company/jobs/new?error=Invalid+required+task");
     }
   }
 
+  // Shadow mode: dual-write company_id (legacy) + org_id (new).
   const { data: newJob, error } = await supabase
     .from("job_posts")
     .insert({
       company_id: user.id,
+      org_id: org.id,
       title,
       description,
       location,
@@ -68,7 +70,7 @@ export async function createJobPost(formData: FormData) {
     action: "job_post.created",
     entityType: "job_post",
     entityId: newJob?.id,
-    metadata: { title },
+    metadata: { title, org_id: org.id },
   });
 
   revalidatePath("/company/jobs");
@@ -81,13 +83,13 @@ export async function closeJobPost(formData: FormData) {
   const jobId = String(formData.get("job_id") || "").trim();
   if (!jobId) redirect("/company/jobs?error=Missing+job+id");
 
-  const { supabase, user } = await requireOwnedJob(jobId);
+  const { supabase, org } = await requireOwnedJob(jobId);
 
   const { error } = await supabase
     .from("job_posts")
     .update({ status: "closed", closed_at: new Date().toISOString() })
     .eq("id", jobId)
-    .eq("company_id", user.id);
+    .eq("org_id", org.id);
 
   if (error) redirect(`/company/jobs?error=${encodeURIComponent(error.message)}`);
 
@@ -101,13 +103,13 @@ export async function reopenJobPost(formData: FormData) {
   const jobId = String(formData.get("job_id") || "").trim();
   if (!jobId) redirect("/company/jobs?error=Missing+job+id");
 
-  const { supabase, user } = await requireOwnedJob(jobId);
+  const { supabase, org } = await requireOwnedJob(jobId);
 
   const { error } = await supabase
     .from("job_posts")
     .update({ status: "open", closed_at: null })
     .eq("id", jobId)
-    .eq("company_id", user.id);
+    .eq("org_id", org.id);
 
   if (error) redirect(`/company/jobs?error=${encodeURIComponent(error.message)}`);
 
@@ -121,13 +123,13 @@ export async function deleteJobPost(formData: FormData) {
   const jobId = String(formData.get("job_id") || "").trim();
   if (!jobId) redirect("/company/jobs?error=Missing+job+id");
 
-  const { supabase, user } = await requireOwnedJob(jobId);
+  const { supabase, org } = await requireOwnedJob(jobId);
 
   const { error } = await supabase
     .from("job_posts")
     .delete()
     .eq("id", jobId)
-    .eq("company_id", user.id);
+    .eq("org_id", org.id);
 
   if (error) redirect(`/company/jobs?error=${encodeURIComponent(error.message)}`);
 

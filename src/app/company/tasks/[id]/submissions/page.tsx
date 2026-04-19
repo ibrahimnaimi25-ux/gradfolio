@@ -65,7 +65,7 @@ function relativeTime(iso: string | null) {
 
 async function saveCompanyReview(formData: FormData) {
   "use server";
-  const { supabase, user } = await requireCompany();
+  const { supabase, user, org } = await requireCompany();
 
   const submissionId = String(formData.get("submission_id") || "").trim();
   const taskId = String(formData.get("task_id") || "").trim();
@@ -79,10 +79,10 @@ async function saveCompanyReview(formData: FormData) {
   // Verify company owns this task before writing review
   const { data: task } = await supabase
     .from("tasks")
-    .select("id, company_id")
+    .select("id, org_id")
     .eq("id", taskId)
-    .eq("company_id", user.id)
-    .maybeSingle<{ id: string; company_id: string }>();
+    .eq("org_id", org.id)
+    .maybeSingle<{ id: string; org_id: string | null }>();
 
   if (!task) redirect(`/company/tasks/${taskId}/submissions?error=Access+denied`);
 
@@ -126,14 +126,14 @@ export default async function CompanySubmissionsPage({
 }) {
   const { id: taskId } = await params;
   const { success, error } = await searchParams;
-  const { supabase, user, profile } = await requireCompany();
+  const { supabase, user, profile, org } = await requireCompany();
 
   // Fetch task and verify ownership
   const { data: task } = await supabase
     .from("tasks")
     .select("id, title, description, major, submission_type, status, archived_at")
     .eq("id", taskId)
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .eq("task_source", "company")
     .maybeSingle<{
       id: string;

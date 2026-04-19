@@ -26,7 +26,7 @@ type SearchParams = Promise<{
 
 type JobPostRow = {
   id: string;
-  company_id: string;
+  org_id: string | null;
   title: string;
   employment_type: string;
   location: string | null;
@@ -79,7 +79,7 @@ function decodeMessage(v: string | undefined) {
 
 async function updateApplicationStatus(formData: FormData) {
   "use server";
-  const { supabase, user } = await requireCompany();
+  const { supabase, org } = await requireCompany();
 
   const applicationId = String(formData.get("application_id") || "").trim();
   const newStatus = String(formData.get("status") || "").trim();
@@ -96,11 +96,11 @@ async function updateApplicationStatus(formData: FormData) {
   // Verify the application belongs to a job owned by this company
   const { data: appRow } = await supabase
     .from("job_applications")
-    .select("id, job_id, job_posts!inner(company_id)")
+    .select("id, job_id, job_posts!inner(org_id)")
     .eq("id", applicationId)
-    .maybeSingle<{ id: string; job_id: string; job_posts: { company_id: string } }>();
+    .maybeSingle<{ id: string; job_id: string; job_posts: { org_id: string | null } }>();
 
-  if (!appRow || appRow.job_posts.company_id !== user.id) {
+  if (!appRow || appRow.job_posts.org_id !== org.id) {
     redirect(`/company/jobs/${jobId}/applicants?error=Access+denied`);
   }
 
@@ -160,14 +160,14 @@ export default async function ApplicantsPage({
   const success = decodeMessage(sp.success);
   const error = decodeMessage(sp.error);
 
-  const { supabase, user } = await requireCompany();
+  const { supabase, org } = await requireCompany();
 
   // Fetch job + verify ownership
   const { data: job } = await supabase
     .from("job_posts")
-    .select("id, company_id, title, employment_type, location, required_task_id, min_score, status")
+    .select("id, org_id, title, employment_type, location, required_task_id, min_score, status")
     .eq("id", jobId)
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .maybeSingle<JobPostRow>();
 
   if (!job) notFound();

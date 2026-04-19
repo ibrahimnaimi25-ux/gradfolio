@@ -61,14 +61,14 @@ export default async function CompanyJobsPage({
   const success = decodeMessage(params.success);
   const error = decodeMessage(params.error);
 
-  const { supabase, user } = await requireCompany();
+  const { supabase, org } = await requireCompany();
 
   let jobsQuery = supabase
     .from("job_posts")
     .select(
       "id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
     )
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .order("created_at", { ascending: false });
   if (statusFilter !== "all") jobsQuery = jobsQuery.eq("status", statusFilter);
   const { data: jobs } = await jobsQuery.returns<JobPostRow[]>();
@@ -94,7 +94,7 @@ export default async function CompanyJobsPage({
   const { data: allMineRaw } = await supabase
     .from("job_posts")
     .select("id, status")
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .returns<{ id: string; status: string }[]>();
   const allMine = allMineRaw ?? [];
   const totalOpen = allMine.filter((j) => j.status === "open").length;

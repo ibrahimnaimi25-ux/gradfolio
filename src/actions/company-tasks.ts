@@ -10,7 +10,7 @@ import { logAudit } from "@/lib/audit";
  * Called from /company/tasks/new.
  */
 export async function createCompanyTask(formData: FormData) {
-  const { supabase, user } = await requireCompany();
+  const { supabase, user, org } = await requireCompany();
 
   const title = String(formData.get("title") || "").trim();
   const description = String(formData.get("description") || "").trim() || null;
@@ -47,6 +47,7 @@ export async function createCompanyTask(formData: FormData) {
       status,
       task_source: "company",
       company_id: user.id,
+      org_id: org.id,
       created_by: user.id,
       assignment_type: "major",
     })
@@ -77,7 +78,7 @@ export async function updateCompanyTask(formData: FormData) {
   const taskId = String(formData.get("task_id") || "").trim();
   if (!taskId) redirect("/company/tasks?error=Missing+task+ID");
 
-  const { supabase, user, task } = await requireOwnedTask(taskId);
+  const { supabase, user, org, task } = await requireOwnedTask(taskId);
 
   const title = String(formData.get("title") || "").trim();
   const description = String(formData.get("description") || "").trim() || null;
@@ -113,7 +114,7 @@ export async function updateCompanyTask(formData: FormData) {
       status,
     })
     .eq("id", taskId)
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .eq("task_source", "company");
 
   if (error) {
@@ -140,13 +141,13 @@ export async function archiveCompanyTask(formData: FormData) {
   const taskId = String(formData.get("task_id") || "").trim();
   if (!taskId) redirect("/company/tasks?error=Missing+task+ID");
 
-  const { supabase, user, task } = await requireOwnedTask(taskId);
+  const { supabase, user, org, task } = await requireOwnedTask(taskId);
 
   await supabase
     .from("tasks")
     .update({ archived_at: new Date().toISOString(), status: "closed" })
     .eq("id", taskId)
-    .eq("company_id", user.id);
+    .eq("org_id", org.id);
 
   await logAudit({
     userId: user.id,
@@ -166,13 +167,13 @@ export async function restoreCompanyTask(formData: FormData) {
   const taskId = String(formData.get("task_id") || "").trim();
   if (!taskId) redirect("/company/tasks?error=Missing+task+ID");
 
-  const { supabase, user, task } = await requireOwnedTask(taskId);
+  const { supabase, user, org, task } = await requireOwnedTask(taskId);
 
   await supabase
     .from("tasks")
     .update({ archived_at: null, status: "open" })
     .eq("id", taskId)
-    .eq("company_id", user.id);
+    .eq("org_id", org.id);
 
   await logAudit({
     userId: user.id,

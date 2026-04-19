@@ -73,6 +73,8 @@ export type CompanyProfile = {
   id: string;
   full_name: string | null;
   role: AppRole;
+  // Legacy mirrors — still read from profiles until Phase 9.5 cleanup
+  // drops them. New code should prefer `organization` fields below.
   company_name: string | null;
   industry: string | null;
   company_website: string | null;
@@ -80,8 +82,38 @@ export type CompanyProfile = {
   company_description: string | null;
 };
 
+export type Organization = {
+  id: string;
+  type: "company" | "university";
+  slug: string;
+  name: string;
+  logo_url: string | null;
+  website: string | null;
+  description: string | null;
+  industry: string | null;
+  size: string | null;
+  status: string;
+  verified_at: string | null;
+  owner_user_id: string | null;
+  plan: string;
+  plan_status: string;
+  plan_seats: number;
+  plan_renews_at: string | null;
+};
+
+export type OrgMembership = {
+  org_id: string;
+  user_id: string;
+  role_in_org: "owner" | "manager" | "recruiter" | "advisor" | "member";
+  status: string;
+  joined_at: string;
+};
+
 /**
- * Require a company account.
+ * Require a company account. Also loads the caller's primary company
+ * organization and their membership in it. Both are guaranteed non-null
+ * on success — Phase 9's backfill creates one org per company profile.
+ *
  * Redirects non-company users to /dashboard and guests to /login.
  */
 export async function requireCompany() {
@@ -101,7 +133,47 @@ export async function requireCompany() {
     redirect("/dashboard");
   }
 
-  return { supabase, user, profile };
+  // Find the primary company org for this user. Prefer owned orgs; fall
+  // back to any active company membership.
+  const { data: memberships } = await supabase
+    .from("organization_members")
+    .select("org_id, user_id, role_in_org, status, joined_at")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .returns<OrgMembership[]>();
+
+  const allMemberships = memberships ?? [];
+  if (allMemberships.length === 0) {
+    // Backfill should have created one. If not, the user is mid-migration.
+    redirect("/company/dashboard?error=Organization+not+found");
+  }
+
+  const ownerFirst = [...allMemberships].sort((a, b) =>
+    a.role_in_org === "owner" ? -1 : b.role_in_org === "owner" ? 1 : 0
+  );
+
+  const orgIds = ownerFirst.map((m) => m.org_id);
+  const { data: orgs } = await supabase
+    .from("organizations")
+    .select(
+      "id, type, slug, name, logo_url, website, description, industry, size, status, verified_at, owner_user_id, plan, plan_status, plan_seats, plan_renews_at"
+    )
+    .in("id", orgIds)
+    .eq("type", "company")
+    .returns<Organization[]>();
+
+  const orgsById = new Map((orgs ?? []).map((o) => [o.id, o]));
+  const primary = ownerFirst
+    .map((m) => orgsById.get(m.org_id))
+    .find((o): o is Organization => !!o);
+
+  if (!primary) {
+    redirect("/company/dashboard?error=Organization+not+found");
+  }
+
+  const membership = ownerFirst.find((m) => m.org_id === primary.id)!;
+
+  return { supabase, user, profile, org: primary, membership };
 }
 
 export type OwnedTask = {
@@ -115,29 +187,27 @@ export type OwnedTask = {
   section_id: string | null;
   archived_at: string | null;
   created_at: string;
-  company_id: string | null;
+  org_id: string | null;
   task_source: string | null;
 };
 
 /**
- * Require a company account AND that the given task belongs to them.
- * Redirects to the tasks list with an error if the task is missing
- * or owned by someone else.
+ * Require a company account AND that the given task belongs to their org.
  */
 export async function requireOwnedTask(taskId: string) {
-  const { supabase, user, profile } = await requireCompany();
-  const { data: task } = await supabase
+  const ctx = await requireCompany();
+  const { data: task } = await ctx.supabase
     .from("tasks")
     .select(
-      "id, title, description, major, status, submission_type, due_date, section_id, archived_at, created_at, company_id, task_source"
+      "id, title, description, major, status, submission_type, due_date, section_id, archived_at, created_at, org_id, task_source"
     )
     .eq("id", taskId)
-    .eq("company_id", user.id)
+    .eq("org_id", ctx.org.id)
     .eq("task_source", "company")
     .maybeSingle<OwnedTask>();
 
   if (!task) redirect("/company/tasks?error=Task+not+found");
-  return { supabase, user, profile, task };
+  return { ...ctx, task };
 }
 
 export type OwnedJob = {
@@ -154,23 +224,23 @@ export type OwnedJob = {
   deadline: string | null;
   created_at: string;
   closed_at: string | null;
-  company_id: string | null;
+  org_id: string | null;
 };
 
 /**
- * Require a company account AND that the given job post belongs to them.
+ * Require a company account AND that the given job post belongs to their org.
  */
 export async function requireOwnedJob(jobId: string) {
-  const { supabase, user, profile } = await requireCompany();
-  const { data: job } = await supabase
+  const ctx = await requireCompany();
+  const { data: job } = await ctx.supabase
     .from("job_posts")
     .select(
-      "id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at, company_id"
+      "id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at, org_id"
     )
     .eq("id", jobId)
-    .eq("company_id", user.id)
+    .eq("org_id", ctx.org.id)
     .maybeSingle<OwnedJob>();
 
   if (!job) redirect("/company/jobs?error=Job+not+found");
-  return { supabase, user, profile, job };
+  return { ...ctx, job };
 }

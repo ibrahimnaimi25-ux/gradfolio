@@ -368,7 +368,7 @@ export default async function AdminTasksPage({
     .select(
       "id, title, description, major, status, assignment_type, submission_type, assigned_user_id, section_id, cohort_id, created_at, due_date, order_index"
     )
-    .is("company_id", null)  // exclude company-owned tasks from admin view
+    .is("org_id", null)  // exclude company/university-owned tasks from admin view
     .order("order_index", { ascending: true, nullsFirst: true });
   if (majorFilter !== null && majorFilter.length > 0) tasksQuery = tasksQuery.in("major", majorFilter);
   const { data: tasksRaw } = await tasksQuery.returns<TaskRow[]>();

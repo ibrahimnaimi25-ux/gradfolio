@@ -56,7 +56,7 @@ export default async function CompanyTasksPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const { supabase, user } = await requireCompany();
+  const { supabase, org } = await requireCompany();
   const params = await searchParams;
   const success = params.success ? decodeURIComponent(params.success) : null;
   const error = params.error ? decodeURIComponent(params.error) : null;
@@ -70,7 +70,7 @@ export default async function CompanyTasksPage({
     .select(
       "id, title, description, major, section_id, status, submission_type, due_date, archived_at, created_at"
     )
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .eq("task_source", "company")
     .order("created_at", { ascending: false });
 
@@ -122,7 +122,7 @@ export default async function CompanyTasksPage({
   const { data: allMineRaw } = await supabase
     .from("tasks")
     .select("id, archived_at")
-    .eq("company_id", user.id)
+    .eq("org_id", org.id)
     .eq("task_source", "company")
     .returns<{ id: string; archived_at: string | null }[]>();
   const allMine = allMineRaw ?? [];

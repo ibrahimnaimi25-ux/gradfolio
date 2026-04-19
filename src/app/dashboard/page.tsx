@@ -160,7 +160,8 @@ export default async function DashboardPage({
   // For students: companies interested in them
   type CompanyInterest = {
     id: string;
-    company_user_id: string;
+    org_id: string | null;
+    company_user_id: string | null;
     created_at: string;
     message: string | null;
   };
@@ -169,7 +170,7 @@ export default async function DashboardPage({
     try {
       const { data: interests } = await supabase
         .from("connections")
-        .select("id, company_user_id, created_at, message")
+        .select("id, org_id, company_user_id, created_at, message")
         .eq("student_id", user.id)
         .order("created_at", { ascending: false })
         .limit(5)
@@ -178,17 +179,21 @@ export default async function DashboardPage({
     } catch { /* table may not exist yet */ }
   }
 
-  // Fetch company names for the interests
-  type CompanyRow = { id: string; company_name: string | null; industry: string | null };
+  // Fetch org info for the interests, keyed by org_id.
+  type CompanyRow = { id: string; name: string | null; industry: string | null };
   let companyMap: Record<string, CompanyRow> = {};
   if (companyInterests.length > 0) {
-    const companyIds = companyInterests.map((i) => i.company_user_id);
-    const { data: companies } = await supabase
-      .from("profiles")
-      .select("id, company_name, industry")
-      .in("id", companyIds)
-      .returns<CompanyRow[]>();
-    companyMap = Object.fromEntries((companies ?? []).map((c) => [c.id, c]));
+    const orgIds = Array.from(
+      new Set(companyInterests.map((i) => i.org_id).filter((v): v is string => !!v))
+    );
+    if (orgIds.length > 0) {
+      const { data: companies } = await supabase
+        .from("organizations")
+        .select("id, name, industry")
+        .in("id", orgIds)
+        .returns<CompanyRow[]>();
+      companyMap = Object.fromEntries((companies ?? []).map((c) => [c.id, c]));
+    }
   }
 
   // For students: recent submissions (replaces task_joins)
@@ -281,7 +286,7 @@ export default async function DashboardPage({
       const { data: openJobs } = await supabase
         .from("job_posts")
         .select(
-          "id, company_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
+          "id, company_id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
         )
         .eq("status", "open")
         .order("created_at", { ascending: false })
@@ -316,18 +321,21 @@ export default async function DashboardPage({
         const limited = qualified.slice(0, 5);
 
         if (limited.length > 0) {
-          const companyIds = Array.from(new Set(limited.map((j) => j.company_id)));
-          const { data: companies } = await supabase
-            .from("profiles")
-            .select("id, company_name")
-            .in("id", companyIds)
-            .returns<{ id: string; company_name: string | null }[]>();
-          const nameMap = Object.fromEntries(
-            (companies ?? []).map((c) => [c.id, c.company_name])
+          const orgIds = Array.from(
+            new Set(limited.map((j) => j.org_id).filter((v): v is string => !!v))
           );
+          const nameMap: Record<string, string | null> = {};
+          if (orgIds.length > 0) {
+            const { data: companies } = await supabase
+              .from("organizations")
+              .select("id, name")
+              .in("id", orgIds)
+              .returns<{ id: string; name: string | null }[]>();
+            for (const c of companies ?? []) nameMap[c.id] = c.name;
+          }
           qualifyingJobs = limited.map((j) => ({
             ...j,
-            company_name: nameMap[j.company_id] ?? null,
+            company_name: j.org_id ? nameMap[j.org_id] ?? null : null,
           }));
         }
       }
@@ -370,21 +378,21 @@ export default async function DashboardPage({
           const taskIds = compSubList.map((s) => s.task_id);
           const companyIds = reviewData.map((r) => r.company_user_id);
 
-          const [{ data: taskTitles }, { data: companyProfiles }] = await Promise.all([
+          const [{ data: taskTitles }, { data: companyOrgs }] = await Promise.all([
             supabase
               .from("tasks")
               .select("id, title")
               .in("id", taskIds)
               .returns<{ id: string; title: string }[]>(),
             supabase
-              .from("profiles")
-              .select("id, company_name")
-              .in("id", companyIds)
-              .returns<{ id: string; company_name: string | null }[]>(),
+              .from("organizations")
+              .select("owner_user_id, name")
+              .in("owner_user_id", companyIds)
+              .returns<{ owner_user_id: string; name: string | null }[]>(),
           ]);
 
           const taskTitleMap = Object.fromEntries((taskTitles ?? []).map((t) => [t.id, t.title]));
-          const companyNameMap = Object.fromEntries((companyProfiles ?? []).map((p) => [p.id, p.company_name]));
+          const companyNameMap = Object.fromEntries((companyOrgs ?? []).map((p) => [p.owner_user_id, p.name]));
           const subTaskMap = Object.fromEntries(compSubList.map((s) => [s.id, s.task_id]));
 
           companyTaskFeedback = reviewData.map((r) => ({
@@ -988,7 +996,7 @@ export default async function DashboardPage({
               <CardContent>
                 <div className="space-y-2.5">
                   {companyInterests.map((interest) => {
-                    const company = companyMap[interest.company_user_id];
+                    const company = interest.org_id ? companyMap[interest.org_id] : undefined;
                     if (!company) return null;
                     return (
                       <div
@@ -997,7 +1005,7 @@ export default async function DashboardPage({
                       >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-slate-900">
-                            {company.company_name ?? "A company"}
+                            {company.name ?? "A company"}
                           </p>
                           {company.industry && (
                             <p className="text-xs text-slate-400">{company.industry}</p>

@@ -36,28 +36,30 @@ const labelClass = "mb-1.5 block text-sm font-medium text-slate-700";
 
 async function saveCompanyProfile(formData: FormData) {
   "use server";
-  const { supabase, user } = await requireCompany();
+  const { supabase, user, org } = await requireCompany();
 
   const str = (k: string) => formData.get(k)?.toString().trim() || null;
 
-  const fields = {
-    full_name: str("company_name"),
-    company_name: str("company_name"),
-    industry: str("industry"),
-    company_website: str("company_website"),
-    company_size: str("company_size"),
-    company_description: str("company_description"),
-  };
+  const name = str("company_name");
+  const industry = str("industry");
+  const website = str("company_website");
+  const size = str("company_size");
+  const description = str("company_description");
 
-  if (!fields.company_name) {
+  if (!name) {
     redirect("/company/profile?error=Company+name+is+required");
   }
 
-  const { error } = await supabase
-    .from("profiles")
-    .update(fields)
-    .eq("id", user.id);
+  // Update display name on the user's profile and the org fields on the org.
+  const [profUpdate, orgUpdate] = await Promise.all([
+    supabase.from("profiles").update({ full_name: name }).eq("id", user.id),
+    supabase
+      .from("organizations")
+      .update({ name, industry, website, size, description })
+      .eq("id", org.id),
+  ]);
 
+  const error = profUpdate.error ?? orgUpdate.error;
   if (error) {
     redirect(`/company/profile?error=${encodeURIComponent(error.message)}`);
   }
@@ -82,8 +84,17 @@ export default async function CompanyProfilePage({
 }: {
   searchParams: SearchParams;
 }) {
-  const { profile } = await requireCompany();
+  const { org } = await requireCompany();
   const { saved, error } = await searchParams;
+
+  // Adapter so the rest of the JSX can keep reading `profile.*` fields.
+  const profile = {
+    company_name: org.name,
+    industry: org.industry,
+    company_size: org.size,
+    company_website: org.website,
+    company_description: org.description,
+  };
 
   return (
     <main className="min-h-screen bg-slate-50 pb-24">

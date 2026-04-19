@@ -161,7 +161,6 @@ export default async function DashboardPage({
   type CompanyInterest = {
     id: string;
     org_id: string | null;
-    company_user_id: string | null;
     created_at: string;
     message: string | null;
   };
@@ -170,7 +169,7 @@ export default async function DashboardPage({
     try {
       const { data: interests } = await supabase
         .from("connections")
-        .select("id, org_id, company_user_id, created_at, message")
+        .select("id, org_id, created_at, message")
         .eq("student_id", user.id)
         .order("created_at", { ascending: false })
         .limit(5)
@@ -286,7 +285,7 @@ export default async function DashboardPage({
       const { data: openJobs } = await supabase
         .from("job_posts")
         .select(
-          "id, company_id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
+          "id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
         )
         .eq("status", "open")
         .order("created_at", { ascending: false })

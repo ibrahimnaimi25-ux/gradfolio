@@ -73,13 +73,6 @@ export type CompanyProfile = {
   id: string;
   full_name: string | null;
   role: AppRole;
-  // Legacy mirrors — still read from profiles until Phase 9.5 cleanup
-  // drops them. New code should prefer `organization` fields below.
-  company_name: string | null;
-  industry: string | null;
-  company_website: string | null;
-  company_size: string | null;
-  company_description: string | null;
 };
 
 export type Organization = {
@@ -125,7 +118,7 @@ export async function requireCompany() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, role, company_name, industry, company_website, company_size, company_description")
+    .select("id, full_name, role")
     .eq("id", user.id)
     .maybeSingle<CompanyProfile>();
 

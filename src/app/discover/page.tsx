@@ -54,13 +54,20 @@ export default async function DiscoverPage({
 
   const { data: viewerProfile } = await supabase
     .from("profiles")
-    .select("role, company_name")
+    .select("role")
     .eq("id", user.id)
-    .maybeSingle<{ role: string; company_name: string | null }>();
+    .maybeSingle<{ role: string }>();
 
   if (!viewerProfile || viewerProfile.role !== "company") {
     redirect("/dashboard");
   }
+
+  const { data: viewerOrg } = await supabase
+    .from("organizations")
+    .select("name")
+    .eq("owner_user_id", user.id)
+    .eq("type", "company")
+    .maybeSingle<{ name: string | null }>();
 
   const majorNames = await getMajorNames(supabase);
 
@@ -177,7 +184,7 @@ export default async function DiscoverPage({
             Discover Talent
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
-            Welcome, {viewerProfile.company_name ?? "Company"}
+            Welcome, {viewerOrg?.name ?? "Company"}
           </h1>
           <p className="mt-2 text-base text-slate-500 max-w-xl">
             Browse students who are open to opportunities. Every profile has real, reviewed work — proof of skills, not just claims.

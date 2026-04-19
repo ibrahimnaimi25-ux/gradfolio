@@ -129,7 +129,7 @@ declare
   final_slug text;
 begin
   for p in
-    select id, company_name, company_logo_url, company_website,
+    select id, company_name, company_website,
            company_description, industry, company_size
     from public.profiles
     where role = 'company'
@@ -144,12 +144,12 @@ begin
     final_slug := base_slug || '-' || substr(p.id::text, 1, 6);
 
     insert into public.organizations (
-      id, type, slug, name, logo_url, website, description, industry, size,
+      id, type, slug, name, website, description, industry, size,
       owner_user_id, status, plan, plan_status
     ) values (
       new_org_id, 'company', final_slug,
       coalesce(nullif(p.company_name, ''), 'Untitled Company'),
-      p.company_logo_url, p.company_website, p.company_description,
+      p.company_website, p.company_description,
       p.industry, p.company_size,
       p.id, 'active', 'free', 'active'
     );

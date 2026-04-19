@@ -43,11 +43,9 @@ export async function createJobPost(formData: FormData) {
     }
   }
 
-  // Shadow mode: dual-write company_id (legacy) + org_id (new).
   const { data: newJob, error } = await supabase
     .from("job_posts")
     .insert({
-      company_id: user.id,
       org_id: org.id,
       title,
       description,

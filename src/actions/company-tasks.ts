@@ -46,7 +46,6 @@ export async function createCompanyTask(formData: FormData) {
       due_date: dueDate,
       status,
       task_source: "company",
-      company_id: user.id,
       org_id: org.id,
       created_by: user.id,
       assignment_type: "major",

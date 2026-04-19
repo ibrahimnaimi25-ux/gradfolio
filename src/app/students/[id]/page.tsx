@@ -117,17 +117,15 @@ function MajorBadge({ major }: { major: string | null }) {
 // ── Server action: company expresses interest in student ──────────────────────
 async function expressInterest(formData: FormData) {
   "use server";
-  const { supabase, user, org } = await requireCompany();
+  const { supabase, org } = await requireCompany();
 
   const studentId = formData.get("student_id")?.toString() ?? "";
   const message = formData.get("message")?.toString().trim() || null;
 
   // Upsert so double-click doesn't create duplicates.
-  // Shadow mode: dual-write legacy company_user_id + new org_id.
   await supabase.from("connections").upsert(
     {
       org_id: org.id,
-      company_user_id: user.id,
       student_id: studentId,
       message,
       status: "interested",

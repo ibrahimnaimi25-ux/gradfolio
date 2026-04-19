@@ -66,7 +66,7 @@ export default async function JobsBrowsePage({
   let query = supabase
     .from("job_posts")
     .select(
-      "id, company_id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
+      "id, org_id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at"
     )
     .eq("status", "open")
     .order("created_at", { ascending: false });

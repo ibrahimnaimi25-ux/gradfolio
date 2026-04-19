@@ -65,7 +65,7 @@ export default async function CompanyDashboardPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const { supabase, profile, org } = await requireCompany();
+  const { supabase, org } = await requireCompany();
   const { welcome } = await searchParams;
 
   // Tasks
@@ -161,17 +161,17 @@ export default async function CompanyDashboardPage({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-lg font-bold text-white shadow-sm">
-                {getInitials(profile.company_name)}
+                {getInitials(org.name)}
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">
                   Company Workspace
                 </p>
                 <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
-                  {profile.company_name ?? "Your Company"}
+                  {org.name ?? "Your Company"}
                 </h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  {[profile.industry, profile.company_size].filter(Boolean).join(" · ") ||
+                  {[org.industry, org.size].filter(Boolean).join(" · ") ||
                     "Complete your profile to get started"}
                 </p>
               </div>

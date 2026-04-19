@@ -123,6 +123,23 @@ drop policy if exists tasks_member_write  on public.tasks;
 drop policy if exists job_posts_public_read  on public.job_posts;
 drop policy if exists job_posts_member_write on public.job_posts;
 
+-- Pre-Phase-9 legacy policies may reference columns we're about to drop
+-- (company_id, company_user_id). Blow away every policy on the affected
+-- tables so the drops below succeed. We recreate the ones we want in the
+-- sections that follow.
+do $$
+declare r record;
+begin
+  for r in
+    select schemaname, tablename, policyname
+      from pg_policies
+     where schemaname = 'public'
+       and tablename in ('tasks','job_posts','connections','submissions','organizations','organization_members')
+  loop
+    execute format('drop policy if exists %I on %I.%I', r.policyname, r.schemaname, r.tablename);
+  end loop;
+end$$;
+
 -- ---------------------------------------------------------------------
 -- 4. organizations
 -- ---------------------------------------------------------------------
@@ -147,15 +164,30 @@ create policy orgs_admin_all on public.organizations
 -- ---------------------------------------------------------------------
 -- 5. organization_members
 -- ---------------------------------------------------------------------
+-- NOTE: cannot reference organization_members (directly or via a function
+-- that selects from it) in this policy — Postgres flags it as recursion
+-- even with SECURITY DEFINER. Keep this policy self-contained.
 create policy om_read on public.organization_members
   for select using (
     user_id = auth.uid()
-    or org_id in (select public.user_org_ids(auth.uid()))
     or public.user_is_admin(auth.uid())
   );
 
-create policy om_owner_write on public.organization_members
-  for all using (
+-- NOTE: must be per-command (not FOR ALL) — a FOR ALL policy with a
+-- USING clause that selects from organization_members recurses on SELECT.
+create policy om_owner_insert on public.organization_members
+  for insert with check (
+    exists (
+      select 1 from public.organization_members m
+       where m.org_id = organization_members.org_id
+         and m.user_id = auth.uid()
+         and m.role_in_org in ('owner','manager')
+         and m.status = 'active'
+    )
+  );
+
+create policy om_owner_update on public.organization_members
+  for update using (
     exists (
       select 1 from public.organization_members m
        where m.org_id = organization_members.org_id
@@ -165,6 +197,17 @@ create policy om_owner_write on public.organization_members
     )
   )
   with check (
+    exists (
+      select 1 from public.organization_members m
+       where m.org_id = organization_members.org_id
+         and m.user_id = auth.uid()
+         and m.role_in_org in ('owner','manager')
+         and m.status = 'active'
+    )
+  );
+
+create policy om_owner_delete on public.organization_members
+  for delete using (
     exists (
       select 1 from public.organization_members m
        where m.org_id = organization_members.org_id

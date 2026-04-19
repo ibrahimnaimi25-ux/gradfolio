@@ -137,8 +137,9 @@ export async function requireCompany() {
 
   const allMemberships = memberships ?? [];
   if (allMemberships.length === 0) {
-    // Backfill should have created one. If not, the user is mid-migration.
-    redirect("/company/dashboard?error=Organization+not+found");
+    // No org yet — send to the ungated register page so they can finish setup.
+    // (Never redirect back into /company/* which would loop through this gate.)
+    redirect("/company/register?error=no_org");
   }
 
   const ownerFirst = [...allMemberships].sort((a, b) =>
@@ -161,7 +162,7 @@ export async function requireCompany() {
     .find((o): o is Organization => !!o);
 
   if (!primary) {
-    redirect("/company/dashboard?error=Organization+not+found");
+    redirect("/company/register?error=no_org");
   }
 
   const membership = ownerFirst.find((m) => m.org_id === primary.id)!;

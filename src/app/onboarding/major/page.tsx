@@ -50,7 +50,7 @@ export default async function OnboardingMajorPage({
     .maybeSingle<{ role: string | null; major: string | null; full_name: string | null }>();
 
   // Redirect non-students away — they don't need a major
-  if (profile?.role === "company") redirect("/company/setup");
+  if (profile?.role === "company") redirect("/company/dashboard");
   if (profile?.role === "admin") redirect("/dashboard");
   if (profile?.role === "manager") redirect("/manager/dashboard");
 

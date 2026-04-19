@@ -103,3 +103,74 @@ export async function requireCompany() {
 
   return { supabase, user, profile };
 }
+
+export type OwnedTask = {
+  id: string;
+  title: string;
+  description: string | null;
+  major: string | null;
+  status: string | null;
+  submission_type: string | null;
+  due_date: string | null;
+  section_id: string | null;
+  archived_at: string | null;
+  created_at: string;
+  company_id: string | null;
+  task_source: string | null;
+};
+
+/**
+ * Require a company account AND that the given task belongs to them.
+ * Redirects to the tasks list with an error if the task is missing
+ * or owned by someone else.
+ */
+export async function requireOwnedTask(taskId: string) {
+  const { supabase, user, profile } = await requireCompany();
+  const { data: task } = await supabase
+    .from("tasks")
+    .select(
+      "id, title, description, major, status, submission_type, due_date, section_id, archived_at, created_at, company_id, task_source"
+    )
+    .eq("id", taskId)
+    .eq("company_id", user.id)
+    .eq("task_source", "company")
+    .maybeSingle<OwnedTask>();
+
+  if (!task) redirect("/company/tasks?error=Task+not+found");
+  return { supabase, user, profile, task };
+}
+
+export type OwnedJob = {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  employment_type: string;
+  required_task_id: string | null;
+  min_score: number | null;
+  salary_text: string | null;
+  majors: string[] | null;
+  status: string;
+  deadline: string | null;
+  created_at: string;
+  closed_at: string | null;
+  company_id: string | null;
+};
+
+/**
+ * Require a company account AND that the given job post belongs to them.
+ */
+export async function requireOwnedJob(jobId: string) {
+  const { supabase, user, profile } = await requireCompany();
+  const { data: job } = await supabase
+    .from("job_posts")
+    .select(
+      "id, title, description, location, employment_type, required_task_id, min_score, salary_text, majors, status, deadline, created_at, closed_at, company_id"
+    )
+    .eq("id", jobId)
+    .eq("company_id", user.id)
+    .maybeSingle<OwnedJob>();
+
+  if (!job) redirect("/company/jobs?error=Job+not+found");
+  return { supabase, user, profile, job };
+}

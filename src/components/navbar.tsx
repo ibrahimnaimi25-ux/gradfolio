@@ -55,9 +55,11 @@ export default async function Navbar() {
 
   const companyLinks = [
     { href: "/", label: "Home" },
-    { href: "/company/setup", label: "Dashboard" },
+    { href: "/company/dashboard", label: "Dashboard" },
     { href: "/company/tasks", label: "My Tasks" },
+    { href: "/company/jobs", label: "Jobs" },
     { href: "/discover", label: "Discover Talent" },
+    { href: "/company/profile", label: "Profile" },
   ];
 
   const guestLinks = [

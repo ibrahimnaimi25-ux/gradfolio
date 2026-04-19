@@ -72,14 +72,17 @@ export default function CompanyRegisterPage() {
       });
 
       if (error) {
-        setMessage(error.message);
+        console.error("Supabase signUp error:", error);
+        setMessage(error.message || "Could not create account.");
         setLoading(false);
         return;
       }
 
-      router.push("/company/setup?registered=1");
-    } catch {
-      setMessage("Network error — could not reach the server.");
+      router.push("/company/dashboard?welcome=1");
+    } catch (err) {
+      console.error("Company signup failed:", err);
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setMessage(`Signup failed: ${msg}`);
       setLoading(false);
     }
   }

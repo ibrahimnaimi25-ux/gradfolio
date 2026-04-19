@@ -14,7 +14,7 @@ function getOrigin(request: Request): string {
  * OAuth / magic-link callback.
  * Exchanges the ?code=... param for a session cookie, then routes:
  *   - no profile major yet  → /onboarding/major
- *   - company role          → /company/setup
+ *   - company role          → /company/dashboard
  *   - manager role          → /manager/dashboard
  *   - otherwise             → /dashboard (or ?next= param)
  */
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
   // Company users don't need a major
   if (profile?.role === "company") {
-    return NextResponse.redirect(`${origin}/company/setup`);
+    return NextResponse.redirect(`${origin}/company/dashboard`);
   }
 
   // Managers / admins

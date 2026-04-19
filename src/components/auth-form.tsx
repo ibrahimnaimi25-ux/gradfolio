@@ -81,7 +81,7 @@ export default function AuthForm({ mode, majors }: AuthFormProps) {
           .maybeSingle();
         setLoading(false);
         if (profile?.role === "company") {
-          router.push("/company/setup");
+          router.push("/company/dashboard");
         } else if (profile?.role === "manager") {
           router.push("/manager/dashboard");
         } else if (profile?.role === "admin") {
